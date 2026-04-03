@@ -1,0 +1,13 @@
+name: "sub60's cache action"
+
+description: "Sets up and drains the sub60 Nix cache uploader"
+
+inputs:
+  auth-token:
+    description: "The authentication token used to push store paths"
+    required: true
+
+runs:
+  using: "node24"
+  main: "js/main.js"
+  post: "js/post.js"
