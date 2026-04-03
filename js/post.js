@@ -1,66 +1,54 @@
 // @ts-check
 
+const core = require("@actions/core");
 const { spawn } = require("node:child_process");
-
-/**
- * @param {string} name
- * @returns {string}
- */
-const getSavedState = (name) => {
-  const envName = `STATE_${name.replace(/ /g, "_")}`;
-  return process.env[envName] || "";
-};
+const { once } = require("node:events");
+const { STATE_SOCKET_PATH, STATE_BINARY_PATH } = require("./state");
 
 /**
  * @param {string} binaryPath
  * @param {string} socketPath
  * @returns {Promise<void>}
  */
-const runStop = (binaryPath, socketPath) => {
-  return new Promise((resolve, reject) => {
-    const child = spawn(
-      binaryPath,
-      ["drain", "--socket", socketPath],
-      {
-        stdio: "inherit",
-        env: process.env,
-      },
-    );
-
-    child.on("error", reject);
-    child.on("exit", (code, signal) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-
-      if (signal) {
-        reject(new Error(`Daemon stop exited via signal '${signal}'.`));
-        return;
-      }
-
-      reject(new Error(`Daemon stop exited with code ${code}.`));
-    });
+const runDrain = async (binaryPath, socketPath) => {
+  const child = spawn(binaryPath, ["drain", "--socket", socketPath], {
+    stdio: "inherit",
   });
+
+  const [code, signal] = await Promise.race([
+    once(child, "error").then(([error]) => {
+      throw error;
+    }),
+    once(child, "exit"),
+  ]);
+
+  if (code === 0) {
+    return;
+  }
+
+  if (signal) {
+    throw new Error(`Daemon drain exited via signal '${signal}'.`);
+  }
+
+  throw new Error(`Daemon drain exited with code ${code}.`);
 };
 
 /**
  * @returns {Promise<void>}
  */
 const main = async () => {
-  const socketPath = getSavedState("socket_path");
-  const binaryPath = getSavedState("binary_path");
+  const socketPath = core.getState(STATE_SOCKET_PATH);
+  const binaryPath = core.getState(STATE_BINARY_PATH);
 
   if (!socketPath || !binaryPath) {
-    console.log("No saved daemon state found; skipping shutdown.");
+    core.info("No saved daemon state found; skipping shutdown.");
     return;
   }
 
-  console.log(`Stopping daemon via socket '${socketPath}'.`);
-  await runStop(binaryPath, socketPath);
+  core.info(`Stopping daemon via socket '${socketPath}'.`);
+  await runDrain(binaryPath, socketPath);
 };
 
 main().catch((error) => {
-  console.error(error.stack || error.message);
-  process.exitCode = 1;
+  core.setFailed(error.stack || error.message);
 });

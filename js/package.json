@@ -1,5 +1,8 @@
 {
   "private": true,
+  "dependencies": {
+    "@actions/core": "^1.11.1"
+  },
   "devDependencies": {
     "@types/node": "^25.5.2"
   }
