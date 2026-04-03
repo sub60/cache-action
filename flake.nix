@@ -43,10 +43,17 @@
             width = 80;
           };
 
+          programs.prettier.enable = true;
+
           programs.rustfmt = {
             enable = true;
             package = mkToolchain pkgs;
           };
+
+          settings.formatter.prettier.options = [
+            "--config"
+            "${./prettier.config.json}"
+          ];
 
           settings.formatter.rustfmt.options = [
             "--config-path"
@@ -84,6 +91,7 @@
                   "rustfmt"
                 ];
               })
+              (mkTreefmt pkgs).config.build.programs.prettier
               pkgs.typescript-language-server
             ];
           };
