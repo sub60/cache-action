@@ -1,2 +1,3 @@
 /.direnv
+/js/node_modules
 /target

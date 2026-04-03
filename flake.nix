@@ -92,6 +92,7 @@
                 ];
               })
               (mkTreefmt pkgs).config.build.programs.prettier
+              pkgs.nodejs
               pkgs.typescript-language-server
             ];
           };
