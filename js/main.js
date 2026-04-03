@@ -184,7 +184,7 @@ const writeHookScript = async (hookPath, binaryPath, socketPath) => {
     "set -eu",
     "set -f",
     "export IFS=' '",
-    `exec "${binaryPath}" daemon push --socket "${socketPath}" $OUT_PATHS`,
+    `exec "${binaryPath}" push --socket "${socketPath}" $OUT_PATHS`,
     "",
   ].join("\n");
 
@@ -248,7 +248,7 @@ const main = async () => {
   const logHandle = fs.openSync(logPath, "a");
   const child = spawn(
     binaryPath,
-    ["daemon", "run", "--socket", socketPath, "--auth-token", authToken],
+    ["start", "--socket", socketPath, "--auth-token", authToken],
     {
       detached: true,
       stdio: ["ignore", logHandle, logHandle],

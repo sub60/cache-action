@@ -20,7 +20,7 @@ const runStop = (binaryPath, socketPath) => {
   return new Promise((resolve, reject) => {
     const child = spawn(
       binaryPath,
-      ["daemon", "stop", "--socket", socketPath],
+      ["drain", "--socket", socketPath],
       {
         stdio: "inherit",
         env: process.env,
