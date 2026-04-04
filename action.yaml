@@ -7,10 +7,16 @@ inputs:
     description: "The authentication token used to push store paths"
     required: true
   github-token:
-    description: "Optional GitHub token used to resolve tags for commit-pinned action refs"
+    description: "GitHub token used to download release artifacts from private repos"
     required: false
 
 runs:
-  using: "node24"
-  main: "js/main.js"
-  post: "js/post.js"
+  using: "composite"
+  steps:
+    - uses: ./js
+      with:
+        auth-token: ${{ inputs.auth-token }}
+        github-token: ${{ inputs.github-token }}
+      env:
+        GITHUB_ACTION_REF: ${{ github.action_ref }}
+        GITHUB_ACTION_REPOSITORY: ${{ github.action_repository }}

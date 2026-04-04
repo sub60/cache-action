@@ -1,0 +1,12 @@
+name: "cache action runtime"
+
+inputs:
+  auth-token:
+    required: true
+  github-token:
+    required: false
+
+runs:
+  using: "node24"
+  main: "main.js"
+  post: "post.js"

@@ -28,20 +28,7 @@ const requiredEnv = (name) => {
   return value;
 };
 
-/**
- * @param {string} name
- * @returns {string}
- */
-const envValueOrUnset = (name) => {
-  return process.env[name]?.trim() || "<unset>";
-};
 
-const logActionSourceEnv = () => {
-  core.info(
-    `GITHUB_ACTION_REPOSITORY=${envValueOrUnset("GITHUB_ACTION_REPOSITORY")}`,
-  );
-  core.info(`GITHUB_ACTION_REF=${envValueOrUnset("GITHUB_ACTION_REF")}`);
-};
 
 /**
  * @returns {string}
@@ -152,32 +139,36 @@ const releaseTag = async (actionRepository, actionRef, githubToken) => {
  * @returns {Promise<{ url: string, headers: Record<string, string> }>}
  */
 const releaseAssetRequest = async (assetName, githubToken) => {
-  // const actionRepository = requiredEnv("GITHUB_ACTION_REPOSITORY");
-  // const actionRef = requiredEnv("GITHUB_ACTION_REF");
-  const actionRepository = "sub60/cache-action";
-  const actionRef = "v0.0.2";
-  const tag = await releaseTag(actionRepository, actionRef, githubToken);
+  const actionRepository =
+    process.env.GITHUB_ACTION_REPOSITORY?.trim() || "sub60/cache-action";
+
+  // TODO: remove the fallback once the repo is public and local checkouts are
+  // no longer needed.
+  const actionRef = process.env.GITHUB_ACTION_REF?.trim();
 
   if (!githubToken) {
-    return {
-      url: `https://github.com/${actionRepository}/releases/download/${tag}/${assetName}`,
-      headers: {},
-    };
+    const base = `https://github.com/${actionRepository}/releases`;
+    const url = actionRef
+      ? `${base}/download/${await releaseTag(actionRepository, actionRef, githubToken)}/${assetName}`
+      : `${base}/latest/download/${assetName}`;
+
+    return { url, headers: {} };
   }
 
   const apiUrl = requiredEnv("GITHUB_API_URL");
 
-  const response = await fetch(
-    `${apiUrl}/repos/${actionRepository}/releases/tags/${encodeURIComponent(tag)}`,
-    {
-      headers: githubApiHeaders(githubToken),
-      redirect: "follow",
-    },
-  );
+  const releaseUrl = actionRef
+    ? `${apiUrl}/repos/${actionRepository}/releases/tags/${encodeURIComponent(await releaseTag(actionRepository, actionRef, githubToken))}`
+    : `${apiUrl}/repos/${actionRepository}/releases/latest`;
+
+  const response = await fetch(releaseUrl, {
+    headers: githubApiHeaders(githubToken),
+    redirect: "follow",
+  });
 
   if (!response.ok) {
     throw new Error(
-      `Failed to resolve release '${tag}' in '${actionRepository}': ${response.status} ${response.statusText}`,
+      `Failed to resolve release in '${actionRepository}': ${response.status} ${response.statusText}`,
     );
   }
 
@@ -186,7 +177,7 @@ const releaseAssetRequest = async (assetName, githubToken) => {
 
   if (!asset) {
     throw new Error(
-      `Release '${tag}' in '${actionRepository}' does not contain asset '${assetName}'`,
+      `Release '${release.tag_name}' in '${actionRepository}' does not contain asset '${assetName}'`,
     );
   }
 
@@ -331,8 +322,6 @@ const main = async () => {
   const hookPath = path.join(daemonDir, "post-build-hook.sh");
   const configPath = path.join(daemonDir, "nix.conf");
   const assetName = `${binaryName}-${target}`;
-
-  logActionSourceEnv();
 
   const { url, headers } = await releaseAssetRequest(assetName, githubToken);
 
