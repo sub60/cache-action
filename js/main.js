@@ -1,6 +1,6 @@
 // @ts-check
 
-const core = require("@actions/core");
+const core = require("./tiny-actions-core");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const { spawn } = require("node:child_process");

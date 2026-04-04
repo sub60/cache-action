@@ -1,6 +1,6 @@
 // @ts-check
 
-const core = require("@actions/core");
+const core = require("./tiny-actions-core");
 const { spawn } = require("node:child_process");
 const { once } = require("node:events");
 const { STATE_SOCKET_PATH, STATE_BINARY_PATH } = require("./state");
@@ -27,10 +27,10 @@ const runDrain = async (binaryPath, socketPath) => {
   }
 
   if (signal) {
-    throw new Error(`Daemon drain exited via signal '${signal}'.`);
+    throw new Error(`Daemon drain exited via signal '${signal}'`);
   }
 
-  throw new Error(`Daemon drain exited with code ${code}.`);
+  throw new Error(`Daemon drain exited with code ${code}`);
 };
 
 /**
@@ -45,7 +45,7 @@ const main = async () => {
     return;
   }
 
-  core.info(`Stopping daemon via socket '${socketPath}'.`);
+  core.info(`Stopping daemon via socket '${socketPath}'`);
   await runDrain(binaryPath, socketPath);
 };
 
