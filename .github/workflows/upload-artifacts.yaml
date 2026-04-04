@@ -1,0 +1,40 @@
+name: Upload Artifacts
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build for ${{ matrix.package }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: aarch64-linux
+            runner: ubuntu-latest
+          - package: x86_64-linux
+            runner: ubuntu-latest
+          - package: aarch64-darwin
+            runner: macos-14
+          - package: x86_64-darwin
+            runner: macos-14
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@v34
+        with:
+          nix_version: 2.29.2
+
+      - name: Build package
+        run: nix build ".#${{ matrix.package }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: cache-action-${{ matrix.package }}
+          path: result/bin/cache-action
+          if-no-files-found: error

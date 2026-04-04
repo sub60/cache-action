@@ -64,7 +64,7 @@ const releaseUrl = (assetName) => {
     );
   }
 
-  return `https://github.com/${actionRepository}/releases/download/${actionRef}/${assetName}`;
+  return `https://github.com/${actionRepository}/releases/download/${/^[0-9a-f]{7,40}$/i.test(actionRef) ? `commit-${actionRef}` : actionRef}/${assetName}`;
 };
 
 /**
