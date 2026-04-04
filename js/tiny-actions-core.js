@@ -45,7 +45,7 @@ const getInput = (name, options = {}) => {
  * @returns {string}
  */
 const getState = (name) => {
-  return process.env[`STATE_${envKey(name)}`] || "";
+  return process.env[`STATE_${name}`] || "";
 };
 
 /**
@@ -53,7 +53,7 @@ const getState = (name) => {
  * @param {string} value
  */
 const saveState = (name, value) => {
-  process.env[`STATE_${envKey(name)}`] = value;
+  process.env[`STATE_${name}`] = value;
 
   if (process.env.GITHUB_STATE) {
     appendFileCommand(process.env.GITHUB_STATE, name, value);

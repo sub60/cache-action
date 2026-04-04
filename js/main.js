@@ -297,13 +297,25 @@ const writeNixConfig = async (configPath, hookPath) => {
  * @returns {string}
  */
 const mergedUserConfFiles = (configPath) => {
-  const existing = process.env.NIX_USER_CONF_FILES;
+  const nix_user_conf_files = process.env.NIX_USER_CONF_FILES;
 
-  if (!existing || !existing.trim()) {
-    return configPath;
+  if (nix_user_conf_files && nix_user_conf_files.trim()) {
+    return `${configPath}:${nix_user_conf_files}`;
   }
 
-  return `${configPath}${path.delimiter}${existing}`;
+  // Setting $NIX_USER_CONF_FILES disables Nix's default XDG config lookup, so
+  // we must include those paths explicitly.
+
+  const xdgConfigHome =
+    process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
+
+  const xdgConfigDirs = (process.env.XDG_CONFIG_DIRS || "/etc/xdg").split(":");
+
+  const defaultConfFiles = [xdgConfigHome, ...xdgConfigDirs].map(
+    (dir) => `${dir}/nix/nix.conf`,
+  );
+
+  return [configPath, ...defaultConfFiles].join(":");
 };
 
 /**
@@ -325,7 +337,7 @@ const main = async () => {
 
   const { url, headers } = await releaseAssetRequest(assetName, githubToken);
 
-  core.info(`Downloading daemon '${assetName}' from '${url}'`);
+  core.info(`Downloading '${assetName}' from '${url}'`);
   await downloadFile(url, binaryPath, headers);
 
   core.saveState(STATE_SOCKET_PATH, socketPath);
