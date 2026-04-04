@@ -98,12 +98,12 @@
         in
         {
           default = mkPackage pkgs;
-          x86_64-darwin = mkPackage pkgs.pkgsCross.x86_64-darwin;
+          aarch64-linux = mkPackage pkgs.pkgsCross.aarch64-multiplatform-musl;
           x86_64-linux = mkPackage pkgs.pkgsCross.musl64;
         }
         // nixpkgs.lib.optionalAttrs (pkgs.stdenv.buildPlatform.isDarwin) {
           aarch64-darwin = mkPackage pkgs.pkgsCross.aarch64-darwin;
-          aarch64-linux = mkPackage pkgs.pkgsCross.aarch64-multiplatform-musl;
+          x86_64-darwin = mkPackage pkgs.pkgsCross.x86_64-darwin;
         }
       );
 
