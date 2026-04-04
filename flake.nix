@@ -45,20 +45,19 @@
       mkCargoNix =
         pkgs:
         let
-          inherit (pkgs.stdenv.hostPlatform) system;
+          inherit (pkgs.stdenv.buildPlatform) system;
           generatedCargoNix = crate2nix.tools.${system}.generatedCargoNix {
             name = "cache-action";
             src = ./.;
           };
-          toolchain = mkToolchain pkgs;
         in
         import generatedCargoNix {
           inherit pkgs;
           buildRustCrateForPkgs =
-            _crate:
-            pkgs.buildRustCrate.override {
-              cargo = toolchain;
-              rustc = toolchain;
+            cratePkgs:
+            cratePkgs.buildRustCrate.override {
+              cargo = mkToolchain cratePkgs;
+              rustc = mkToolchain cratePkgs;
             };
         };
 

@@ -10,7 +10,6 @@ jobs:
     name: Build for ${{ matrix.package }}
     runs-on: ${{ matrix.runner }}
     strategy:
-      fail-fast: false
       matrix:
         include:
           - package: aarch64-linux
