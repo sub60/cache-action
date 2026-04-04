@@ -1,5 +1,9 @@
 {
   inputs = {
+    crate2nix = {
+      url = "github:nix-community/crate2nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
@@ -14,6 +18,7 @@
   outputs =
     {
       self,
+      crate2nix,
       nixpkgs,
       rust-overlay,
       treefmt-nix,
@@ -30,8 +35,32 @@
 
       mkToolchain =
         pkgs:
-        (rust-overlay.lib.mkRustBin { } pkgs).fromRustupToolchainFile
-          ./rust-toolchain.toml;
+        ((rust-overlay.lib.mkRustBin { } pkgs.buildPackages).fromRustupToolchainFile
+          ./rust-toolchain.toml
+        ).override
+          {
+            targets = [ pkgs.stdenv.hostPlatform.rust.rustcTarget ];
+          };
+
+      mkCargoNix =
+        pkgs:
+        let
+          inherit (pkgs.stdenv.hostPlatform) system;
+          generatedCargoNix = crate2nix.tools.${system}.generatedCargoNix {
+            name = "cache-action";
+            src = ./.;
+          };
+          toolchain = mkToolchain pkgs;
+        in
+        import generatedCargoNix {
+          inherit pkgs;
+          buildRustCrateForPkgs =
+            _crate:
+            pkgs.buildRustCrate.override {
+              cargo = toolchain;
+              rustc = toolchain;
+            };
+        };
 
       mkTreefmt =
         pkgs:
@@ -62,6 +91,22 @@
         };
     in
     {
+      packages = forEachSystem (
+        _system: pkgs:
+        let
+          mkPackage = pkgs: (mkCargoNix pkgs).rootCrate.build;
+        in
+        {
+          default = mkPackage pkgs;
+          x86_64-darwin = mkPackage pkgs.pkgsCross.x86_64-darwin;
+          x86_64-linux = mkPackage pkgs.pkgsCross.musl64;
+        }
+        // nixpkgs.lib.optionalAttrs (pkgs.stdenv.buildPlatform.isDarwin) {
+          aarch64-darwin = mkPackage pkgs.pkgsCross.aarch64-darwin;
+          aarch64-linux = mkPackage pkgs.pkgsCross.aarch64-multiplatform-musl;
+        }
+      );
+
       # Workaround for https://github.com/NixOS/nix/issues/8881 so that we
       # can run individual checks with `nix run .#check-<foo>`.
       apps = forEachSystem (
@@ -80,7 +125,7 @@
       );
 
       devShells = forEachSystem (
-        system: pkgs: {
+        _system: pkgs: {
           default = pkgs.mkShell {
             nativeBuildInputs = [
               ((mkToolchain pkgs).override {
