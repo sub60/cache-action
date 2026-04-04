@@ -19,7 +19,10 @@ const appendFileCommand = (file, key, value) => {
   const fs = require("node:fs");
   const os = require("node:os");
 
-  fs.appendFileSync(file, `${key}<<__SUB60_EOF__${os.EOL}${value}${os.EOL}__SUB60_EOF__${os.EOL}`);
+  fs.appendFileSync(
+    file,
+    `${key}<<__SUB60_EOF__${os.EOL}${value}${os.EOL}__SUB60_EOF__${os.EOL}`,
+  );
 };
 
 /**

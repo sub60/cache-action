@@ -29,6 +29,19 @@ const requiredEnv = (name) => {
 };
 
 /**
+ * @param {string} name
+ * @returns {string}
+ */
+const envValueOrUnset = (name) => {
+  return process.env[name]?.trim() || "<unset>";
+};
+
+const logActionSourceEnv = () => {
+  core.info(`GITHUB_ACTION_REPOSITORY=${envValueOrUnset("GITHUB_ACTION_REPOSITORY")}`);
+  core.info(`GITHUB_ACTION_REF=${envValueOrUnset("GITHUB_ACTION_REF")}`);
+};
+
+/**
  * @returns {string}
  */
 const platformAssetTarget = () => {
@@ -137,8 +150,10 @@ const releaseTag = async (actionRepository, actionRef, githubToken) => {
  * @returns {Promise<string>}
  */
 const releaseAssetUrl = async (assetName, githubToken) => {
-  const actionRepository = requiredEnv("GITHUB_ACTION_REPOSITORY");
-  const actionRef = requiredEnv("GITHUB_ACTION_REF");
+  // const actionRepository = requiredEnv("GITHUB_ACTION_REPOSITORY");
+  // const actionRef = requiredEnv("GITHUB_ACTION_REF");
+  const actionRepository = "sub60/cache-action";
+  const actionRef = "v0.0.2";
   const tag = await releaseTag(actionRepository, actionRef, githubToken);
 
   return `https://github.com/${actionRepository}/releases/download/${tag}/${assetName}`;
@@ -273,6 +288,9 @@ const main = async () => {
   const hookPath = path.join(daemonDir, "post-build-hook.sh");
   const configPath = path.join(daemonDir, "nix.conf");
   const assetName = `${binaryName}-${target}`;
+
+  logActionSourceEnv();
+
   const url = await releaseAssetUrl(assetName, githubToken);
 
   core.info(`Downloading daemon '${assetName}' from '${url}'`);
