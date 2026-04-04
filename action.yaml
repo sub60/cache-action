@@ -6,6 +6,9 @@ inputs:
   auth-token:
     description: "The authentication token used to push store paths"
     required: true
+  github-token:
+    description: "GitHub token used to download release artifacts"
+    required: false
 
 runs:
   using: "node24"
