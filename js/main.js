@@ -22,7 +22,7 @@ const requiredEnv = (name) => {
   const value = process.env[name]?.trim();
 
   if (!value) {
-    throw new Error(`${name} is not set.`);
+    throw new Error(`${name} is not set`);
   }
 
   return value;
@@ -39,7 +39,7 @@ const platformAssetTarget = () => {
 
   if (!arch || !["linux", "darwin"].includes(process.platform)) {
     throw new Error(
-      `Unsupported runner platform '${process.platform}' and architecture '${os.arch()}'.`,
+      `Unsupported runner platform '${process.platform}' and architecture '${os.arch()}'`,
     );
   }
 
@@ -50,100 +50,108 @@ const platformAssetTarget = () => {
  * @param {string} ref
  * @returns {boolean}
  */
-const isAssetRef = (ref) => {
-  return (
-    /^v?\d+(?:\.\d+)*(?:[-+._][A-Za-z0-9._-]+)?$/.test(ref) ||
-    /^[0-9a-f]{7,40}$/i.test(ref)
-  );
+const isCommitSha = (ref) => {
+  return /^[0-9a-f]{7,40}$/i.test(ref);
 };
 
 /**
- * @param {string} assetName
- * @returns {string}
+ * @param {string} [githubToken]
+ * @returns {Record<string, string>}
  */
-const releaseUrl = (assetName) => {
-  const actionRepository = requiredEnv("GITHUB_ACTION_REPOSITORY");
-  const actionRef = requiredEnv("GITHUB_ACTION_REF");
+const githubApiHeaders = (githubToken) => {
+  const headers = {
+    accept: "application/vnd.github+json",
+    "x-github-api-version": "2022-11-28",
+  };
 
-  if (!isAssetRef(actionRef)) {
+  if (githubToken) {
+    headers.authorization = `Bearer ${githubToken}`;
+  }
+
+  return headers;
+};
+
+/**
+ * @param {string} actionRepository
+ * @param {string} commitSha
+ * @param {string} [githubToken]
+ * @returns {Promise<string | null>}
+ */
+const tagForCommit = async (actionRepository, commitSha, githubToken) => {
+  const apiUrl = requiredEnv("GITHUB_API_URL");
+
+  for (let page = 1; ; page += 1) {
+    const response = await fetch(
+      `${apiUrl}/repos/${actionRepository}/tags?per_page=100&page=${page}`,
+      {
+        headers: githubApiHeaders(githubToken),
+        redirect: "follow",
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to list tags in '${actionRepository}' while resolving commit '${commitSha}': ${response.status} ${response.statusText}`,
+      );
+    }
+
+    const tags = await response.json();
+
+    if (tags.length === 0) {
+      return null;
+    }
+
+    const match = tags.find(({ commit }) => commit?.sha?.startsWith(commitSha));
+
+    if (match) {
+      return match.name;
+    }
+  }
+};
+
+/**
+ * @param {string} actionRepository
+ * @param {string} actionRef
+ * @param {string} [githubToken]
+ * @returns {Promise<string>}
+ */
+const releaseTag = async (actionRepository, actionRef, githubToken) => {
+  if (!isCommitSha(actionRef)) {
+    return actionRef;
+  }
+
+  const tag = await tagForCommit(actionRepository, actionRef, githubToken);
+
+  if (!tag) {
     throw new Error(
-      `Action ref '${actionRef}' is not a release tag or commit SHA. Pin the action to a ref that has matching binary assets.`,
+      `Action ref '${actionRef}' is a commit without a tag. This action downloads binaries from GitHub releases, which are only published for tags. Pin the action to a tag to use prebuilt artifacts`,
     );
   }
 
-  return `https://github.com/${actionRepository}/releases/download/${actionRef}/${assetName}`;
+  return tag;
 };
 
 /**
  * @param {string} assetName
  * @param {string} [githubToken]
- * @returns {Promise<{ url: string, headers: Record<string, string> }>}
+ * @returns {Promise<string>}
  */
-const releaseAssetRequest = async (assetName, githubToken) => {
-  if (!githubToken) {
-    return {
-      url: releaseUrl(assetName),
-      headers: {},
-    };
-  }
-
+const releaseAssetUrl = async (assetName, githubToken) => {
   const actionRepository = requiredEnv("GITHUB_ACTION_REPOSITORY");
   const actionRef = requiredEnv("GITHUB_ACTION_REF");
-  const apiUrl = requiredEnv("GITHUB_API_URL");
+  const tag = await releaseTag(actionRepository, actionRef, githubToken);
 
-  if (!isAssetRef(actionRef)) {
-    throw new Error(
-      `Action ref '${actionRef}' is not a release tag or commit SHA. Pin the action to a ref that has matching binary assets.`,
-    );
-  }
-
-  const response = await fetch(
-    `${apiUrl}/repos/${actionRepository}/releases/tags/${encodeURIComponent(actionRef)}`,
-    {
-      headers: {
-        accept: "application/vnd.github+json",
-        authorization: `Bearer ${githubToken}`,
-        "x-github-api-version": "2022-11-28",
-      },
-      redirect: "follow",
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to resolve release '${actionRef}' in '${actionRepository}': ${response.status} ${response.statusText}`,
-    );
-  }
-
-  const release = await response.json();
-  const asset = release.assets.find(({ name }) => name === assetName);
-
-  if (!asset) {
-    throw new Error(
-      `Release '${actionRef}' in '${actionRepository}' does not contain asset '${assetName}'.`,
-    );
-  }
-
-  return {
-    url: asset.url,
-    headers: {
-      accept: "application/octet-stream",
-      authorization: `Bearer ${githubToken}`,
-      "x-github-api-version": "2022-11-28",
-    },
-  };
+  return `https://github.com/${actionRepository}/releases/download/${tag}/${assetName}`;
 };
 
 /**
  * @param {string} url
  * @param {string} destinationPath
- * @param {Record<string, string>} headers
  * @returns {Promise<void>}
  */
-const downloadFile = async (url, destinationPath, headers) => {
+const downloadFile = async (url, destinationPath) => {
   const response = await fetch(url, {
     redirect: "follow",
-    headers,
   });
 
   if (!response.ok) {
@@ -153,7 +161,7 @@ const downloadFile = async (url, destinationPath, headers) => {
   }
 
   if (!response.body) {
-    throw new Error(`Download response for '${url}' did not contain a body.`);
+    throw new Error(`Download response for '${url}' did not contain a body`);
   }
 
   const output = fs.createWriteStream(destinationPath, { mode: 0o755 });
@@ -185,7 +193,7 @@ const waitForSocket = async (socketPath, timeoutMs) => {
     await delay(100);
   }
 
-  throw new Error(`Timed out waiting for daemon socket '${socketPath}'.`);
+  throw new Error(`Timed out waiting for daemon socket '${socketPath}'`);
 };
 
 /**
@@ -201,7 +209,7 @@ const ensureChildStarted = async (child, description) => {
     }),
     once(child, "exit").then(([code, signal]) => {
       throw new Error(
-        `${description} exited before becoming ready with code ${code} and signal ${signal}.`,
+        `${description} exited before becoming ready with code ${code} and signal ${signal}`,
       );
     }),
   ]);
@@ -265,10 +273,10 @@ const main = async () => {
   const hookPath = path.join(daemonDir, "post-build-hook.sh");
   const configPath = path.join(daemonDir, "nix.conf");
   const assetName = `${binaryName}-${target}`;
-  const { url, headers } = await releaseAssetRequest(assetName, githubToken);
+  const url = await releaseAssetUrl(assetName, githubToken);
 
-  core.info(`Downloading daemon '${assetName}' from '${url}'.`);
-  await downloadFile(url, binaryPath, headers);
+  core.info(`Downloading daemon '${assetName}' from '${url}'`);
+  await downloadFile(url, binaryPath);
 
   core.saveState(STATE_SOCKET_PATH, socketPath);
   core.saveState(STATE_BINARY_PATH, binaryPath);
@@ -291,7 +299,7 @@ const main = async () => {
   child.unref();
 
   core.info(
-    `Started daemon with pid ${child.pid}. Waiting for socket '${socketPath}'.`,
+    `Started daemon with pid ${child.pid}. Waiting for socket '${socketPath}'`,
   );
   await waitForSocket(socketPath, 5000);
   core.info("Daemon is ready.");
