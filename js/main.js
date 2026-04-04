@@ -37,7 +37,9 @@ const envValueOrUnset = (name) => {
 };
 
 const logActionSourceEnv = () => {
-  core.info(`GITHUB_ACTION_REPOSITORY=${envValueOrUnset("GITHUB_ACTION_REPOSITORY")}`);
+  core.info(
+    `GITHUB_ACTION_REPOSITORY=${envValueOrUnset("GITHUB_ACTION_REPOSITORY")}`,
+  );
   core.info(`GITHUB_ACTION_REF=${envValueOrUnset("GITHUB_ACTION_REF")}`);
 };
 
@@ -147,26 +149,67 @@ const releaseTag = async (actionRepository, actionRef, githubToken) => {
 /**
  * @param {string} assetName
  * @param {string} [githubToken]
- * @returns {Promise<string>}
+ * @returns {Promise<{ url: string, headers: Record<string, string> }>}
  */
-const releaseAssetUrl = async (assetName, githubToken) => {
+const releaseAssetRequest = async (assetName, githubToken) => {
   // const actionRepository = requiredEnv("GITHUB_ACTION_REPOSITORY");
   // const actionRef = requiredEnv("GITHUB_ACTION_REF");
   const actionRepository = "sub60/cache-action";
   const actionRef = "v0.0.2";
   const tag = await releaseTag(actionRepository, actionRef, githubToken);
 
-  return `https://github.com/${actionRepository}/releases/download/${tag}/${assetName}`;
+  if (!githubToken) {
+    return {
+      url: `https://github.com/${actionRepository}/releases/download/${tag}/${assetName}`,
+      headers: {},
+    };
+  }
+
+  const apiUrl = requiredEnv("GITHUB_API_URL");
+
+  const response = await fetch(
+    `${apiUrl}/repos/${actionRepository}/releases/tags/${encodeURIComponent(tag)}`,
+    {
+      headers: githubApiHeaders(githubToken),
+      redirect: "follow",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to resolve release '${tag}' in '${actionRepository}': ${response.status} ${response.statusText}`,
+    );
+  }
+
+  const release = await response.json();
+  const asset = release.assets.find(({ name }) => name === assetName);
+
+  if (!asset) {
+    throw new Error(
+      `Release '${tag}' in '${actionRepository}' does not contain asset '${assetName}'`,
+    );
+  }
+
+  return {
+    url: asset.url,
+    headers: {
+      accept: "application/octet-stream",
+      authorization: `Bearer ${githubToken}`,
+      "x-github-api-version": "2022-11-28",
+    },
+  };
 };
 
 /**
  * @param {string} url
  * @param {string} destinationPath
+ * @param {Record<string, string>} [headers]
  * @returns {Promise<void>}
  */
-const downloadFile = async (url, destinationPath) => {
+const downloadFile = async (url, destinationPath, headers = {}) => {
   const response = await fetch(url, {
     redirect: "follow",
+    headers,
   });
 
   if (!response.ok) {
@@ -291,10 +334,10 @@ const main = async () => {
 
   logActionSourceEnv();
 
-  const url = await releaseAssetUrl(assetName, githubToken);
+  const { url, headers } = await releaseAssetRequest(assetName, githubToken);
 
   core.info(`Downloading daemon '${assetName}' from '${url}'`);
-  await downloadFile(url, binaryPath);
+  await downloadFile(url, binaryPath, headers);
 
   core.saveState(STATE_SOCKET_PATH, socketPath);
   core.saveState(STATE_BINARY_PATH, binaryPath);
