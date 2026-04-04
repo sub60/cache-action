@@ -28,8 +28,6 @@ const requiredEnv = (name) => {
   return value;
 };
 
-
-
 /**
  * @returns {string}
  */
@@ -316,7 +314,9 @@ const main = async () => {
   const githubToken = core.getInput("github-token");
   const target = platformAssetTarget();
   const runnerTemp = process.env.RUNNER_TEMP || os.tmpdir();
-  const daemonDir = await fsp.mkdtemp(path.join(runnerTemp, "sub60-cache-"));
+  const daemonDir = await fsp.mkdtemp(
+    path.join(runnerTemp, "sub60-cache-action-"),
+  );
   const socketPath = path.join(daemonDir, "daemon.sock");
   const binaryPath = path.join(daemonDir, binaryName);
   const hookPath = path.join(daemonDir, "post-build-hook.sh");

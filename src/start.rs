@@ -1,5 +1,6 @@
 //! TODO: docs.
 
+use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
 
 #[derive(Debug, clap::Args)]
@@ -11,5 +12,13 @@ pub struct StartArgs {
 }
 
 pub(crate) fn start(args: StartArgs) {
-    println!("Starting {:?}", args.socket);
+    let _listener = match UnixListener::bind(&args.socket) {
+        Ok(socket) => socket,
+        Err(err) => panic!(
+            "Failed to create Unix domain socket at {:?}: {err}",
+            args.socket
+        ),
+    };
+
+    println!("Started {:?}", args.socket);
 }
