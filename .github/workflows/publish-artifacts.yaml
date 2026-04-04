@@ -18,10 +18,10 @@ jobs:
             runner: ubuntu-latest
           - package: x86_64-linux
             runner: ubuntu-latest
-          - package: aarch64-darwin
-            runner: macos-14
-          - package: x86_64-darwin
-            runner: macos-14
+          # - package: aarch64-darwin
+          #   runner: macos-14
+          # - package: x86_64-darwin
+          #   runner: macos-14
     steps:
       - uses: actions/checkout@v6
 
@@ -67,7 +67,7 @@ jobs:
           exists=false
           command=create
 
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             exists=true
             command=edit
           fi
@@ -85,9 +85,9 @@ jobs:
             args+=(--latest)
           fi
 
-          gh release "$command" "${args[@]}"
+          gh release "$command" --repo "$GITHUB_REPOSITORY" "${args[@]}"
 
       - name: Upload release artifacts
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$RELEASE_TAG" dist/* --clobber
+        run: gh release upload "$RELEASE_TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
