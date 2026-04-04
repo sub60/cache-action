@@ -15,23 +15,35 @@ const { STATE_SOCKET_PATH, STATE_BINARY_PATH } = require("./state");
 const binaryName = "cache-action";
 
 /**
+ * @param {string} name
  * @returns {string}
  */
-const platformTarget = () => {
-  switch (`${process.platform}/${os.arch()}`) {
-    case "linux/x64":
-      return "x86_64-unknown-linux-musl";
-    case "linux/arm64":
-      return "aarch64-unknown-linux-musl";
-    case "darwin/x64":
-      return "x86_64-apple-darwin";
-    case "darwin/arm64":
-      return "aarch64-apple-darwin";
-    default:
-      throw new Error(
-        `Unsupported runner platform '${process.platform}' and architecture '${os.arch()}'.`,
-      );
+const requiredEnv = (name) => {
+  const value = process.env[name]?.trim();
+
+  if (!value) {
+    throw new Error(`${name} is not set.`);
   }
+
+  return value;
+};
+
+/**
+ * @returns {string}
+ */
+const platformAssetTarget = () => {
+  const arch = {
+    x64: "x86_64",
+    arm64: "aarch64",
+  }[os.arch()];
+
+  if (!arch || !["linux", "darwin"].includes(process.platform)) {
+    throw new Error(
+      `Unsupported runner platform '${process.platform}' and architecture '${os.arch()}'.`,
+    );
+  }
+
+  return `${arch}-${process.platform}`;
 };
 
 /**
@@ -190,7 +202,8 @@ const mergedUserConfFiles = (configPath) => {
  */
 const main = async () => {
   const authToken = core.getInput("auth-token", { required: true });
-  const target = platformTarget();
+  const githubToken = core.getInput("github-token");
+  const target = platformAssetTarget();
   const runnerTemp = process.env.RUNNER_TEMP || os.tmpdir();
   const daemonDir = await fsp.mkdtemp(path.join(runnerTemp, "sub60-cache-"));
   const socketPath = path.join(daemonDir, "daemon.sock");
