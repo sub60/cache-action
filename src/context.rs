@@ -14,6 +14,7 @@ use nix_types::{
 use smol_str::SmolStr;
 
 use crate::AuthToken;
+use crate::protocol::StoreDir;
 
 pub trait Context {
     /// TODO: docs.
@@ -23,7 +24,7 @@ pub trait Context {
     type Nix: Nix;
 
     /// TODO: docs.
-    type Runtime: Runtime;
+    type Spawner: Spawner;
 
     /// The type of error returned when [`cache`](Context::cache) fails.
     type CacheError: Error;
@@ -37,10 +38,10 @@ pub trait Context {
     ) -> impl Future<Output = Result<Self::Cache, Self::CacheError>>;
 
     /// TODO: docs.
-    fn nix(&self) -> Self::Nix;
+    fn nix(&self) -> &Self::Nix;
 
     /// TODO: docs.
-    fn runtime(&self) -> Self::Runtime;
+    fn spawner(&self) -> &Self::Spawner;
 }
 
 pub trait Cache {
@@ -63,7 +64,7 @@ pub trait Cache {
 
     fn write_narinfo(
         &self,
-        narinfo: NarInfo<impl fmt::Display>,
+        narinfo: NarInfo<impl fmt::Display + Send, StoreDir>,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 
@@ -72,31 +73,34 @@ pub trait Nix {
 
     fn nar(
         &self,
-        store_path: &NixStorePath,
+        store_path: &NixStorePath<StoreDir>,
     ) -> impl Future<Output = Result<Bytes, Self::Error>>;
 
     fn narinfo(
         &self,
-        store_path: &NixStorePath,
-    ) -> impl Future<Output = Result<NarInfo<SmolStr>, Self::Error>>;
+        store_path: &NixStorePath<StoreDir>,
+    ) -> impl Future<Output = Result<NarInfo<SmolStr, StoreDir>, Self::Error>>;
 
     fn store_closure(
         &self,
-        store_path: &NixStorePath,
-    ) -> impl Future<Output = Result<impl Stream<Item = NixStorePath>, Self::Error>>;
+        store_path: &NixStorePath<StoreDir>,
+    ) -> impl Future<
+        Output = Result<
+            impl Stream<Item = NixStorePath<StoreDir>>,
+            Self::Error,
+        >,
+    >;
 }
 
-pub trait Runtime {
-    type Handle<Fut: Future>: RuntimeHandle<Fut::Output>;
+pub trait Spawner {
+    type JoinHandle<Fut: Future>: JoinHandle<Fut::Output>;
 
-    fn block_on<Fut: Future>(&self, future: Fut) -> Fut::Output;
-
-    fn spawn<Fut>(&self, future: Fut) -> Self::Handle<Fut>
+    fn spawn<Fut>(&self, future: Fut) -> Self::JoinHandle<Fut>
     where
         Fut: Future + Send + Sync + 'static,
         Fut::Output: Send + Sync + 'static;
 }
 
-pub trait RuntimeHandle<Output>: Future<Output = Output> {
+pub trait JoinHandle<Output>: Future<Output = Output> {
     fn detach(self);
 }

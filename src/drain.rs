@@ -8,7 +8,6 @@ use std::process;
 use futures::SinkExt;
 use tokio::net::UnixStream;
 
-use crate::context::Runtime;
 use crate::protocol;
 use crate::tokio::Tokio;
 
@@ -47,7 +46,7 @@ pub(crate) fn drain(args: DrainArgs) {
         });
 
     if let Err(drain_error) = drain_result {
-        let _ = writeln!(io::stderr(), "{}", drain_error);
+        eprintln!("{drain_error}");
         process::exit(1);
     }
 }

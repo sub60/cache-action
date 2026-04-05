@@ -8,14 +8,23 @@ pub(crate) struct Tokio {
     inner: tokio::runtime::Runtime,
 }
 
+#[derive(Clone)]
+pub(crate) struct TokioSpawner {
+    inner: tokio::runtime::Handle,
+}
+
 pin_project_lite::pin_project! {
-    pub(crate) struct TokioHandle<T> {
+    pub(crate) struct TokioJoinHandle<T> {
         #[pin]
         inner: tokio::task::JoinHandle<T>,
     }
 }
 
 impl Tokio {
+    pub(crate) fn block_on<Fut: Future>(&self, future: Fut) -> Fut::Output {
+        self.inner.block_on(future)
+    }
+
     #[track_caller]
     pub(crate) fn new() -> Self {
         tokio::runtime::Builder::new_multi_thread()
@@ -23,25 +32,25 @@ impl Tokio {
             .map(|inner| Self { inner })
             .expect("couldn't create tokio runtime")
     }
+
+    pub(crate) fn spawner(&self) -> TokioSpawner {
+        TokioSpawner { inner: self.inner.handle().clone() }
+    }
 }
 
-impl context::Runtime for Tokio {
-    type Handle<Fut: Future> = TokioHandle<Fut::Output>;
+impl context::Spawner for TokioSpawner {
+    type JoinHandle<Fut: Future> = TokioJoinHandle<Fut::Output>;
 
-    fn block_on<Fut: Future>(&self, future: Fut) -> Fut::Output {
-        self.inner.block_on(future)
-    }
-
-    fn spawn<Fut>(&self, future: Fut) -> Self::Handle<Fut>
+    fn spawn<Fut>(&self, future: Fut) -> Self::JoinHandle<Fut>
     where
         Fut: Future + Send + Sync + 'static,
         Fut::Output: Send + Sync + 'static,
     {
-        TokioHandle { inner: self.inner.handle().spawn(future) }
+        TokioJoinHandle { inner: self.inner.spawn(future) }
     }
 }
 
-impl<T> Future for TokioHandle<T> {
+impl<T> Future for TokioJoinHandle<T> {
     type Output = T;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -52,6 +61,6 @@ impl<T> Future for TokioHandle<T> {
     }
 }
 
-impl<T> context::RuntimeHandle<T> for TokioHandle<T> {
+impl<T> context::JoinHandle<T> for TokioJoinHandle<T> {
     fn detach(self) {}
 }
