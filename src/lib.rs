@@ -6,6 +6,7 @@ mod drain;
 mod protocol;
 mod push;
 mod start;
+mod tokio;
 
 type AuthToken = ();
 

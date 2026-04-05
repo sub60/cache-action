@@ -4,10 +4,15 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+async-compat = "0.2"
 bytes = "1"
 clap = { version = "4.5.38", features = ["derive"] }
 flume = { version = "0.12" }
 futures = { version = "0.3" }
 nix-types = { git = "ssh://git@github.com/sub60/cache.git", package = "types" }
+pin-project-lite = "0.2"
 smol_str = "0.3.6"
-tokio = { version = "1" }
+tokio = { version = "1", default-features = false, features = [
+  "net",
+  "rt-multi-thread",
+] }

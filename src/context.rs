@@ -86,8 +86,8 @@ pub trait Nix {
     ) -> impl Future<Output = Result<impl Stream<Item = NixStorePath>, Self::Error>>;
 }
 
-pub trait Runtime: Clone {
-    type Handle<Fut: Future>: RuntimeHandle<Fut>;
+pub trait Runtime {
+    type Handle<Fut: Future>: RuntimeHandle<Fut::Output>;
 
     fn block_on<Fut: Future>(&self, future: Fut) -> Fut::Output;
 
@@ -97,6 +97,6 @@ pub trait Runtime: Clone {
         Fut::Output: Send + Sync + 'static;
 }
 
-pub trait RuntimeHandle<Fut: Future>: Future<Output = Fut::Output> {
+pub trait RuntimeHandle<Output>: Future<Output = Output> {
     fn detach(self);
 }
