@@ -29,14 +29,14 @@ impl context::Cache for RealCache {
 
     async fn has_nar(
         &self,
-        _nar_filename: &NarFileName,
+        _nar_filename: NarFileName,
     ) -> Result<bool, Self::Error> {
         todo!()
     }
 
     async fn has_narinfo(
         &self,
-        _narinfo_filename: &NarInfoFileName,
+        _narinfo_filename: NarInfoFileName,
     ) -> Result<bool, Self::Error> {
         todo!()
     }
@@ -48,7 +48,7 @@ impl context::Cache for RealCache {
     async fn write_narinfo(
         &self,
         _narinfo: NarInfo<impl fmt::Display, StoreDir>,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<u64, Self::Error> {
         todo!()
     }
 }

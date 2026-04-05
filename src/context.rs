@@ -43,12 +43,12 @@ pub trait Cache: Clone + Send + 'static {
 
     fn has_nar(
         &self,
-        nar_filename: &NarFileName,
+        nar_filename: NarFileName,
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 
     fn has_narinfo(
         &self,
-        narinfo_filename: &NarInfoFileName,
+        narinfo_filename: NarInfoFileName,
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 
     fn write_nar(
@@ -59,7 +59,7 @@ pub trait Cache: Clone + Send + 'static {
     fn write_narinfo(
         &self,
         narinfo: NarInfo<impl fmt::Display + Send, StoreDir>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    ) -> impl Future<Output = Result<u64, Self::Error>> + Send;
 }
 
 pub trait DrainProgressReporter {
@@ -89,15 +89,15 @@ pub trait DrainProgressReporter {
 pub trait Nix: Clone + Send + 'static {
     type Error: Error + Send;
 
-    fn nar(
+    fn get_narinfo(
         &self,
         store_path: &NixStorePath<StoreDir>,
-    ) -> impl Future<Output = Result<Bytes, Self::Error>>;
+    ) -> impl Future<Output = Result<NarInfo<SmolStr, StoreDir>, Self::Error>> + Send;
 
-    fn narinfo(
+    fn pack_nar(
         &self,
         store_path: &NixStorePath<StoreDir>,
-    ) -> impl Future<Output = Result<NarInfo<SmolStr, StoreDir>, Self::Error>>;
+    ) -> impl Future<Output = Result<(Bytes, NarFileName), Self::Error>> + Send;
 
     fn store_closure(
         &self,

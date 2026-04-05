@@ -2,7 +2,7 @@ use core::pin::pin;
 
 use futures::stream::{FusedStream, FuturesUnordered};
 use futures::{AsyncRead, AsyncWrite, StreamExt, select};
-use nix_types::NixStorePath;
+use nix_types::{NarInfoFileName, NixStorePath};
 
 use crate::context::{
     Cache,
@@ -175,6 +175,57 @@ async fn handle_io<I: Io>(
     }
 }
 
+async fn handle_store_path<C: Cache, N: Nix>(
+    store_path: &NixStorePath<StoreDir>,
+    cache: C,
+    nix: N,
+) -> Result<HandlePathOutcome, HandlePathError<C, N>> {
+    // If the cache already has the NARInfo then it must also have the NAR, so
+    // we can skip this path.
+    if cache
+        .has_narinfo(NarInfoFileName { store_hash: *store_path.hash() })
+        .await
+        .map_err(HandlePathError::CheckHasNarInfo)?
+    {
+        return Ok(HandlePathOutcome::Skipped);
+    }
+
+    let narinfo = nix
+        .get_narinfo(store_path)
+        .await
+        .map_err(HandlePathError::GetNarInfo)?;
+
+    let (nar_bytes, nar_filename) =
+        nix.pack_nar(store_path).await.map_err(HandlePathError::GetNar)?;
+
+    let has_nar = cache
+        .has_nar(nar_filename)
+        .await
+        .map_err(HandlePathError::CheckHasNar)?;
+
+    let nar_size = nar_bytes.len() as u64;
+
+    // Just like `nix copy --to`, we write the NAR *before* the NARInfo to avoid
+    // the cache server temporarily reporting false positives.
+    if !has_nar {
+        cache.write_nar(nar_bytes).await.map_err(HandlePathError::WriteNar)?;
+    } else {
+        // Drop the NAR bytes as early as possible.
+        drop(nar_bytes);
+    }
+
+    let narinfo_size = cache
+        .write_narinfo(narinfo)
+        .await
+        .map_err(HandlePathError::WriteNarInfo)?;
+
+    Ok(if has_nar {
+        HandlePathOutcome::PushedNarInfo { narinfo_size }
+    } else {
+        HandlePathOutcome::PushedNarAndNarInfo { nar_size, narinfo_size }
+    })
+}
+
 impl HandlePathOutcome {
     fn update_report<Ctx: Context>(&self, report: &mut ActionReport<Ctx>) {
         match self {
@@ -192,14 +243,6 @@ impl HandlePathOutcome {
             },
         }
     }
-}
-
-async fn handle_store_path<C: Cache, N: Nix>(
-    _store_path: &NixStorePath<StoreDir>,
-    _cache: C,
-    _nix: N,
-) -> Result<HandlePathOutcome, HandlePathError<C, N>> {
-    todo!()
 }
 
 impl<Ctx: Context> Default for ActionReport<Ctx> {
