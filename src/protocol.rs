@@ -109,3 +109,13 @@ impl str::FromStr for StoreDir {
         })
     }
 }
+
+impl fmt::Display for ReceiveError {
+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io(_error) => todo!(),
+            Self::InvalidSeparator(_) => todo!(),
+            Self::InvalidStorePath(_) => todo!(),
+        }
+    }
+}

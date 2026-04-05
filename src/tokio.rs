@@ -43,8 +43,8 @@ impl context::Spawner for TokioSpawner {
 
     fn spawn<Fut>(&self, future: Fut) -> Self::JoinHandle<Fut>
     where
-        Fut: Future + Send + Sync + 'static,
-        Fut::Output: Send + Sync + 'static,
+        Fut: Future + Send + 'static,
+        Fut::Output: Send + 'static,
     {
         TokioJoinHandle { inner: self.inner.spawn(future) }
     }

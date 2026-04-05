@@ -9,6 +9,7 @@ use std::{io, process};
 
 use async_compat::Compat;
 use futures::Stream;
+use futures::stream::FusedStream;
 use nix::unistd;
 use nix_types::{CacheName, UserName};
 use tokio::net::{UnixListener as TokioUnixListener, UnixStream};
@@ -89,7 +90,7 @@ fn start_inner(args: StartArgs) -> Result<(), StartError> {
 
             let tokio = Tokio::new();
 
-            let context = RealContext::new(tokio.spawner());
+            let mut context = RealContext::new(tokio.spawner());
 
             tokio.block_on(async {
                 std_listener
@@ -106,7 +107,7 @@ fn start_inner(args: StartArgs) -> Result<(), StartError> {
                 let _ = unistd::write(&write_fd, &[1]);
                 drop(write_fd);
 
-                event_loop::run(cache, UnixStreams { listener }, &context)
+                event_loop::run(cache, UnixStreams { listener }, &mut context)
                     .await;
             });
         },
@@ -116,7 +117,7 @@ fn start_inner(args: StartArgs) -> Result<(), StartError> {
 }
 
 impl Stream for UnixStreams {
-    type Item = Compat<UnixStream>;
+    type Item = UnixStream;
 
     fn poll_next(
         self: Pin<&mut Self>,
@@ -125,7 +126,7 @@ impl Stream for UnixStreams {
         loop {
             match self.listener.poll_accept(cx) {
                 Poll::Ready(Ok((stream, _addr))) => {
-                    return Poll::Ready(Some(Compat::new(stream)));
+                    return Poll::Ready(Some(stream));
                 },
                 Poll::Ready(Err(err)) => {
                     eprintln!("Couldn't accept stream: {err}");
@@ -134,6 +135,22 @@ impl Stream for UnixStreams {
                 Poll::Pending => return Poll::Pending,
             }
         }
+    }
+}
+
+impl FusedStream for UnixStreams {
+    fn is_terminated(&self) -> bool {
+        false
+    }
+}
+
+impl event_loop::Io for tokio::net::UnixStream {
+    type Reader = Compat<tokio::net::unix::OwnedReadHalf>;
+    type Writer = Compat<tokio::net::unix::OwnedWriteHalf>;
+
+    fn split(self) -> (Self::Reader, Self::Writer) {
+        let (reader, writer) = self.into_split();
+        (Compat::new(reader), Compat::new(writer))
     }
 }
 

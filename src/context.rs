@@ -6,7 +6,7 @@ use futures::Stream;
 use nix_types::{NarFileName, NarInfo, NarInfoFileName, NixStorePath};
 use smol_str::SmolStr;
 
-use crate::protocol::StoreDir;
+use crate::protocol::{self, StoreDir};
 
 pub trait Context {
     /// TODO: docs.
@@ -17,6 +17,9 @@ pub trait Context {
 
     /// TODO: docs.
     type Spawner: Spawner;
+
+    /// TODO: docs.
+    fn handle_rx_error(&mut self, rx_error: protocol::ReceiveError);
 
     /// TODO: docs.
     fn nix(&self) -> &Self::Nix;
@@ -78,8 +81,8 @@ pub trait Spawner {
 
     fn spawn<Fut>(&self, future: Fut) -> Self::JoinHandle<Fut>
     where
-        Fut: Future + Send + Sync + 'static,
-        Fut::Output: Send + Sync + 'static;
+        Fut: Future + Send + 'static,
+        Fut::Output: Send + 'static;
 }
 
 pub trait JoinHandle<Output>: Future<Output = Output> {
