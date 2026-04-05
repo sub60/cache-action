@@ -3,6 +3,7 @@
 
 mod context;
 mod drain;
+mod event_loop;
 mod nix_cli;
 mod protocol;
 mod push;

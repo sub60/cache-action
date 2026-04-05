@@ -2,12 +2,26 @@ use core::convert::Infallible;
 use core::fmt;
 
 use bytes::Bytes;
-use nix_types::{NarFileName, NarInfo, NarInfoFileName};
+use nix_types::{CacheName, NarFileName, NarInfo, NarInfoFileName, UserName};
 
-use crate::context;
 use crate::protocol::StoreDir;
+use crate::{AuthToken, context};
 
 pub(crate) struct RealCache {}
+
+#[derive(Debug)]
+pub(crate) enum CacheConnectError {}
+
+impl RealCache {
+    /// TODO: docs.
+    pub(crate) async fn connect(
+        _owner: UserName,
+        _name: CacheName,
+        _auth: AuthToken,
+    ) -> Result<Self, CacheConnectError> {
+        todo!()
+    }
+}
 
 impl context::Cache for RealCache {
     type Error = Infallible;
@@ -37,3 +51,11 @@ impl context::Cache for RealCache {
         todo!()
     }
 }
+
+impl fmt::Display for CacheConnectError {
+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {}
+    }
+}
+
+impl core::error::Error for CacheConnectError {}

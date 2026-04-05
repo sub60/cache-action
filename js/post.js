@@ -1,54 +1,23 @@
 // @ts-check
 
 const core = require("./tiny-actions-core");
-const { spawn } = require("node:child_process");
-const { once } = require("node:events");
+const { spawnSync } = require("node:child_process");
 const { STATE_SOCKET_PATH, STATE_BINARY_PATH } = require("./state");
 
-/**
- * @param {string} binaryPath
- * @param {string} socketPath
- * @returns {Promise<void>}
- */
-const runDrain = async (binaryPath, socketPath) => {
-  const child = spawn(binaryPath, ["drain", "--socket", socketPath], {
-    stdio: "inherit",
-  });
+const socketPath = core.getState(STATE_SOCKET_PATH);
+const binaryPath = core.getState(STATE_BINARY_PATH);
 
-  const [code, signal] = await Promise.race([
-    once(child, "error").then(([error]) => {
-      throw error;
-    }),
-    once(child, "exit"),
-  ]);
+if (!socketPath || !binaryPath) {
+  core.info("No saved daemon state found; skipping shutdown.");
+  process.exit(0);
+}
 
-  if (code === 0) {
-    return;
-  }
+core.info(`Stopping daemon via socket '${socketPath}'`);
 
-  if (signal) {
-    throw new Error(`Daemon drain exited via signal '${signal}'`);
-  }
-
-  throw new Error(`Daemon drain exited with code ${code}`);
-};
-
-/**
- * @returns {Promise<void>}
- */
-const main = async () => {
-  const socketPath = core.getState(STATE_SOCKET_PATH);
-  const binaryPath = core.getState(STATE_BINARY_PATH);
-
-  if (!socketPath || !binaryPath) {
-    core.info("No saved daemon state found; skipping shutdown.");
-    return;
-  }
-
-  core.info(`Stopping daemon via socket '${socketPath}'`);
-  await runDrain(binaryPath, socketPath);
-};
-
-main().catch((error) => {
-  core.setFailed(error.stack || error.message);
+const { status } = spawnSync(binaryPath, ["drain", "--socket", socketPath], {
+  stdio: "inherit",
 });
+
+if (status !== 0) {
+  process.exit(status);
+}

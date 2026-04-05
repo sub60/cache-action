@@ -3,13 +3,11 @@
 const core = require("./tiny-actions-core");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
-const { spawn } = require("node:child_process");
-const { once } = require("node:events");
+const { spawnSync } = require("node:child_process");
 const os = require("node:os");
 const path = require("node:path");
 const { Readable } = require("node:stream");
 const { finished } = require("node:stream/promises");
-const { setTimeout: delay } = require("node:timers/promises");
 const { STATE_SOCKET_PATH, STATE_BINARY_PATH } = require("./state");
 
 const binaryName = "cache-action";
@@ -218,51 +216,6 @@ const downloadFile = async (url, destinationPath, headers = {}) => {
 };
 
 /**
- * @param {string} socketPath
- * @param {number} timeoutMs
- * @returns {Promise<void>}
- */
-const waitForSocket = async (socketPath, timeoutMs) => {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    try {
-      const stats = await fsp.lstat(socketPath);
-      if (stats.isSocket()) {
-        return;
-      }
-    } catch (error) {
-      if (error.code !== "ENOENT") {
-        throw error;
-      }
-    }
-
-    await delay(100);
-  }
-
-  throw new Error(`Timed out waiting for daemon socket '${socketPath}'`);
-};
-
-/**
- * @param {import("node:child_process").ChildProcess} child
- * @param {string} description
- * @returns {Promise<void>}
- */
-const ensureChildStarted = async (child, description) => {
-  await Promise.race([
-    once(child, "spawn").then(() => undefined),
-    once(child, "error").then(([error]) => {
-      throw new Error(`${description} failed to start: ${error.message}`);
-    }),
-    once(child, "exit").then(([code, signal]) => {
-      throw new Error(
-        `${description} exited before becoming ready with code ${code} and signal ${signal}`,
-      );
-    }),
-  ]);
-};
-
-/**
  * @param {string} hookPath
  * @param {string} binaryPath
  * @param {string} socketPath
@@ -349,7 +302,7 @@ const main = async () => {
   await writeNixConfig(configPath, hookPath);
   core.exportVariable("NIX_USER_CONF_FILES", mergedUserConfFiles(configPath));
 
-  const child = spawn(
+  const { status } = spawnSync(
     binaryPath,
     [
       "start",
@@ -362,21 +315,12 @@ const main = async () => {
       "--cache",
       cache,
     ],
-    {
-      detached: true,
-      stdio: ["ignore", "inherit", "inherit"],
-    },
+    { stdio: "inherit" },
   );
 
-  await ensureChildStarted(child, "cache daemon");
-
-  child.unref();
-
-  core.info(
-    `Started daemon with pid ${child.pid}. Waiting for socket '${socketPath}'`,
-  );
-  await waitForSocket(socketPath, 5000);
-  core.info("Daemon is ready.");
+  if (status !== 0) {
+    process.exit(status);
+  }
 };
 
 main().catch((error) => {

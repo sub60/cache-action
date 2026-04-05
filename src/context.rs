@@ -3,17 +3,9 @@ use core::fmt;
 
 use bytes::Bytes;
 use futures::Stream;
-use nix_types::{
-    CacheName,
-    NarFileName,
-    NarInfo,
-    NarInfoFileName,
-    NixStorePath,
-    UserName,
-};
+use nix_types::{NarFileName, NarInfo, NarInfoFileName, NixStorePath};
 use smol_str::SmolStr;
 
-use crate::AuthToken;
 use crate::protocol::StoreDir;
 
 pub trait Context {
@@ -25,17 +17,6 @@ pub trait Context {
 
     /// TODO: docs.
     type Spawner: Spawner;
-
-    /// The type of error returned when [`cache`](Context::cache) fails.
-    type CacheError: Error;
-
-    /// TODO: docs.
-    fn cache(
-        &mut self,
-        owner: UserName,
-        name: CacheName,
-        auth: AuthToken,
-    ) -> impl Future<Output = Result<Self::Cache, Self::CacheError>>;
 
     /// TODO: docs.
     fn nix(&self) -> &Self::Nix;
