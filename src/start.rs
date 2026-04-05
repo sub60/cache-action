@@ -9,6 +9,10 @@ pub struct StartArgs {
     socket: PathBuf,
     #[arg(long)]
     auth_token: String,
+    #[arg(long)]
+    user: String,
+    #[arg(long)]
+    cache: String,
 }
 
 pub(crate) fn start(args: StartArgs) {

@@ -5,6 +5,10 @@ inputs:
     required: true
   github-token:
     required: false
+  user:
+    required: true
+  cache:
+    required: true
 
 runs:
   using: "node24"

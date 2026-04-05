@@ -324,6 +324,8 @@ const mergedUserConfFiles = (configPath) => {
 const main = async () => {
   const authToken = core.getInput("auth-token", { required: true });
   const githubToken = core.getInput("github-token");
+  const user = core.getInput("user", { required: true });
+  const cache = core.getInput("cache", { required: true });
   const target = platformAssetTarget();
   const runnerTemp = process.env.RUNNER_TEMP || os.tmpdir();
   const daemonDir = await fsp.mkdtemp(
@@ -349,7 +351,17 @@ const main = async () => {
 
   const child = spawn(
     binaryPath,
-    ["start", "--socket", socketPath, "--auth-token", authToken],
+    [
+      "start",
+      "--socket",
+      socketPath,
+      "--auth-token",
+      authToken,
+      "--user",
+      user,
+      "--cache",
+      cache,
+    ],
     {
       detached: true,
       stdio: ["ignore", "inherit", "inherit"],

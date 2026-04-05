@@ -9,6 +9,14 @@ inputs:
   github-token:
     description: "GitHub token used to download release artifacts from private repos"
     required: false
+  user:
+    description: "The sub60 cache user"
+    required: false
+    default: ${{ github.repository_owner }}
+  cache:
+    description: "The sub60 cache name"
+    required: false
+    default: ${{ github.event.repository.name }}
 
 runs:
   using: "composite"
@@ -17,6 +25,8 @@ runs:
       with:
         auth-token: ${{ inputs.auth-token }}
         github-token: ${{ inputs.github-token }}
+        user: ${{ inputs.user }}
+        cache: ${{ inputs.cache }}
       env:
         GITHUB_ACTION_REF: ${{ github.action_ref }}
         GITHUB_ACTION_REPOSITORY: ${{ github.action_repository }}
