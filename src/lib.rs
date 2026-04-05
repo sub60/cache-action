@@ -1,6 +1,9 @@
+mod context;
 pub mod drain;
 pub mod push;
 pub mod start;
+
+pub type AuthToken = ();
 
 #[derive(Debug, clap::Subcommand)]
 pub enum Command {

@@ -4,4 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+bytes = "1"
 clap = { version = "4.5.38", features = ["derive"] }
+flume = { version = "0.12" }
+futures = { version = "0.3" }
+nix-types = { git = "ssh://git@github.com/sub60/cache.git", package = "types" }
+smol_str = "0.3.6"
+tokio = { version = "1" }
