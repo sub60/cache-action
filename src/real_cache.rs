@@ -7,6 +7,7 @@ use nix_types::{CacheName, NarFileName, NarInfo, NarInfoFileName, UserName};
 use crate::protocol::StoreDir;
 use crate::{AuthToken, context};
 
+#[derive(Clone)]
 pub(crate) struct RealCache {}
 
 #[derive(Debug)]

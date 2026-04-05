@@ -2,7 +2,6 @@ use core::error::Error;
 use core::fmt;
 
 use bytes::Bytes;
-use futures::Stream;
 use nix_types::{NarFileName, NarInfo, NarInfoFileName, NixStorePath};
 use smol_str::SmolStr;
 
@@ -28,8 +27,8 @@ pub trait Context {
     fn spawner(&self) -> &Self::Spawner;
 }
 
-pub trait Cache {
-    type Error: Error;
+pub trait Cache: Clone + Send + 'static {
+    type Error: Error + Send;
 
     fn has_nar(
         &self,
@@ -52,8 +51,8 @@ pub trait Cache {
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 
-pub trait Nix {
-    type Error: Error;
+pub trait Nix: Clone + Send + 'static {
+    type Error: Error + Send;
 
     fn nar(
         &self,
@@ -68,12 +67,7 @@ pub trait Nix {
     fn store_closure(
         &self,
         store_path: &NixStorePath<StoreDir>,
-    ) -> impl Future<
-        Output = Result<
-            impl Stream<Item = NixStorePath<StoreDir>>,
-            Self::Error,
-        >,
-    >;
+    ) -> impl Future<Output = Result<Vec<NixStorePath<StoreDir>>, Self::Error>> + Send;
 }
 
 pub trait Spawner {
