@@ -2,8 +2,8 @@
 
 use core::convert::Infallible;
 use core::pin::Pin;
-use core::str;
 use core::task::{Context, Poll};
+use core::{fmt, str};
 use std::io;
 
 use futures::{AsyncRead, AsyncWrite};
@@ -23,6 +23,7 @@ pub(crate) enum Message {
     DrainDaemon,
 }
 
+#[derive(Clone)]
 pub(crate) enum StoreDir {
     NixStore,
     Other(SmolStr),
@@ -86,6 +87,15 @@ impl<Reader: AsyncRead> futures::Stream for Receiver<Reader> {
         _ctx: &mut Context<'_>,
     ) -> Poll<Option<Self::Item>> {
         todo!()
+    }
+}
+
+impl fmt::Display for StoreDir {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StoreDir::NixStore => NixStoreLiteral.fmt(f),
+            StoreDir::Other(smol_str) => smol_str.fmt(f),
+        }
     }
 }
 
