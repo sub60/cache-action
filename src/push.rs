@@ -1,6 +1,7 @@
 //! TODO: docs.
 
 use core::fmt;
+use core::pin::pin;
 use std::path::PathBuf;
 use std::{io, process};
 
@@ -31,17 +32,17 @@ pub(crate) fn push(args: PushArgs) {
                 .await
                 .map_err(PushError::ConnectToSocket)?;
 
-            let mut message_tx =
-                protocol::Sender::new(async_compat::Compat::new(socket));
+            let mut sender =
+                pin!(protocol::Sender::new(async_compat::Compat::new(socket)));
 
             for store_path in args.store_paths {
-                message_tx
-                    .send(protocol::Message::PushStorePath(store_path))
+                sender
+                    .feed(protocol::Message::PushStorePath(store_path))
                     .await
                     .map_err(PushError::WriteMessage)?;
             }
 
-            Ok(())
+            sender.close().await.map_err(PushError::WriteMessage)
         });
 
     if let Err(push_error) = push_result {

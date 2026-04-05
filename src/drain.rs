@@ -1,6 +1,7 @@
 //! TODO: docs.
 
 use core::fmt;
+use core::pin::pin;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process;
@@ -31,7 +32,7 @@ pub(crate) fn drain(args: DrainArgs) {
 
             let (mut read_half, write_half) = socket.into_split();
 
-            protocol::Sender::new(async_compat::Compat::new(write_half))
+            pin!(protocol::Sender::new(async_compat::Compat::new(write_half)))
                 .send(protocol::Message::DrainDaemon)
                 .await
                 .map_err(DrainError::WriteMessage)?;

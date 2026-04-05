@@ -23,15 +23,15 @@ impl context::Context for RealContext {
     type Nix = NixCli;
     type Spawner = TokioSpawner;
 
-    fn create_drain_progress_reporter<W: AsyncWrite + Unpin>(
+    fn handle_rx_error(&mut self, rx_error: protocol::ReceiveError) {
+        eprintln!("{rx_error}")
+    }
+
+    fn new_drain_progress_reporter<W: AsyncWrite + Unpin>(
         &mut self,
         writer: W,
     ) -> Self::DrainProgressReporter<W> {
         RealDrainProgressReporter::new(writer)
-    }
-
-    fn handle_rx_error(&mut self, rx_error: protocol::ReceiveError) {
-        eprintln!("{rx_error}")
     }
 
     fn nix(&self) -> &Self::Nix {

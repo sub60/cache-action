@@ -23,13 +23,13 @@ pub trait Context {
     type Spawner: Spawner;
 
     /// TODO: docs.
-    fn create_drain_progress_reporter<W: AsyncWrite + Unpin>(
+    fn handle_rx_error(&mut self, rx_error: protocol::ReceiveError);
+
+    /// TODO: docs.
+    fn new_drain_progress_reporter<W: AsyncWrite + Unpin>(
         &mut self,
         writer: W,
     ) -> Self::DrainProgressReporter<W>;
-
-    /// TODO: docs.
-    fn handle_rx_error(&mut self, rx_error: protocol::ReceiveError);
 
     /// TODO: docs.
     fn nix(&self) -> &Self::Nix;

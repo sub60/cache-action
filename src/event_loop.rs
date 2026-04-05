@@ -139,7 +139,7 @@ pub(crate) async fn run<Ctx: Context>(
 
     let writer = pin!(drain_progress_writer);
 
-    let mut reporter = ctx.create_drain_progress_reporter(writer);
+    let mut reporter = ctx.new_drain_progress_reporter(writer);
 
     reporter.report_paths_left_to_handle(handle_store_paths.len() as u32).await;
 
@@ -164,7 +164,8 @@ async fn handle_io<I: Io>(
     message_tx: flume::Sender<Result<Event<I::Writer>, protocol::ReceiveError>>,
 ) {
     let (reader, writer) = io.split();
-    let mut message_rx = pin!(protocol::Receiver::new(reader));
+    let reader = pin!(reader);
+    let mut message_rx = protocol::Receiver::new(reader);
     loop {
         let Some(message_res) = message_rx.next().await else { return };
         match message_res {
