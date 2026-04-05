@@ -3,12 +3,15 @@
 
 mod context;
 mod drain;
+mod nix_cli;
 mod protocol;
 mod push;
+mod real_cache;
+mod real_context;
 mod start;
 mod tokio;
 
-type AuthToken = ();
+type AuthToken = String;
 
 #[derive(Debug, clap::Subcommand)]
 pub enum Command {
