@@ -1,15 +1,13 @@
 //! TODO: docs.
 
 use core::fmt;
-use std::io::{self, Write};
 use std::path::PathBuf;
-use std::process;
+use std::{io, process};
 
 use futures::SinkExt;
 use nix_types::NixStorePath;
 use tokio::net::UnixStream;
 
-use crate::context::Runtime;
 use crate::protocol::{self, StoreDir};
 use crate::tokio::Tokio;
 
@@ -42,7 +40,7 @@ pub(crate) fn push(args: PushArgs) {
         });
 
     if let Err(push_error) = push_result {
-        let _ = writeln!(io::stderr(), "{}", push_error);
+        eprintln!("{push_error}");
         process::exit(1);
     }
 }

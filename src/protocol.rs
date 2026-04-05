@@ -24,7 +24,7 @@ pub(crate) enum Message {
 }
 
 #[derive(Clone)]
-pub(crate) enum StoreDir {
+pub enum StoreDir {
     NixStore,
     Other(SmolStr),
 }
