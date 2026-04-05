@@ -24,11 +24,12 @@ pub struct PushArgs {
 pub(crate) fn push(args: PushArgs) {
     let push_result: Result<(), PushError> =
         Tokio::new().block_on(async move {
-            let mut message_tx = UnixStream::connect(&args.socket)
+            let socket = UnixStream::connect(&args.socket)
                 .await
-                .map(async_compat::Compat::new)
-                .map(protocol::Sender::new)
                 .map_err(PushError::ConnectToSocket)?;
+
+            let mut message_tx =
+                protocol::Sender::new(async_compat::Compat::new(socket));
 
             for store_path in args.store_paths {
                 message_tx
