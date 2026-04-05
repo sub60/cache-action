@@ -2,9 +2,11 @@ use core::error::Error;
 use core::fmt;
 
 use bytes::Bytes;
+use futures::AsyncWrite;
 use nix_types::{NarFileName, NarInfo, NarInfoFileName, NixStorePath};
 use smol_str::SmolStr;
 
+use crate::event_loop;
 use crate::protocol::{self, StoreDir};
 
 pub trait Context {
@@ -12,10 +14,19 @@ pub trait Context {
     type Cache: Cache;
 
     /// TODO: docs.
+    type DrainProgressReporter<W: AsyncWrite + Unpin>: DrainProgressReporter;
+
+    /// TODO: docs.
     type Nix: Nix;
 
     /// TODO: docs.
     type Spawner: Spawner;
+
+    /// TODO: docs.
+    fn create_drain_progress_reporter<W: AsyncWrite + Unpin>(
+        &mut self,
+        writer: W,
+    ) -> Self::DrainProgressReporter<W>;
 
     /// TODO: docs.
     fn handle_rx_error(&mut self, rx_error: protocol::ReceiveError);
@@ -49,6 +60,30 @@ pub trait Cache: Clone + Send + 'static {
         &self,
         narinfo: NarInfo<impl fmt::Display + Send, StoreDir>,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+}
+
+pub trait DrainProgressReporter {
+    fn report_paths_left_to_handle(
+        &mut self,
+        num_paths_left_to_handle: u32,
+    ) -> impl Future<Output = ()>;
+
+    fn report_path_handling_outcome(
+        &mut self,
+        path: &NixStorePath<StoreDir>,
+        outcome: &event_loop::HandlePathOutcome,
+    ) -> impl Future<Output = ()>;
+
+    fn report_path_handling_error<C: Cache, N: Nix>(
+        &mut self,
+        path: &NixStorePath<StoreDir>,
+        error: &event_loop::HandlePathError<C, N>,
+    ) -> impl Future<Output = ()>;
+
+    fn report_final_report<Ctx: Context>(
+        self,
+        report: event_loop::ActionReport<Ctx>,
+    ) -> impl Future<Output = ()>;
 }
 
 pub trait Nix: Clone + Send + 'static {

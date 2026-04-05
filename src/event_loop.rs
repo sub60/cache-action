@@ -4,7 +4,14 @@ use futures::stream::{FusedStream, FuturesUnordered};
 use futures::{AsyncRead, AsyncWrite, StreamExt, select};
 use nix_types::NixStorePath;
 
-use crate::context::{Cache, Context, JoinHandle, Nix, Spawner};
+use crate::context::{
+    Cache,
+    Context,
+    DrainProgressReporter,
+    JoinHandle,
+    Nix,
+    Spawner,
+};
 use crate::protocol::{self, StoreDir};
 
 pub(crate) trait Io: Send + 'static {
@@ -35,19 +42,8 @@ pub(crate) struct ActionReport<Ctx: Context> {
         Vec<(NixStorePath<StoreDir>, HandlePathError<Ctx::Cache, Ctx::Nix>)>,
 }
 
-/// The type of error that can occur when [handling](handle_store_path) a store
-/// path.
-pub(crate) enum HandlePathError<C: Cache, N: Nix> {
-    CheckHasNar(C::Error),
-    CheckHasNarInfo(C::Error),
-    WriteNar(C::Error),
-    WriteNarInfo(C::Error),
-    GetNar(N::Error),
-    GetNarInfo(N::Error),
-}
-
 /// The successful outcome of [handling](handle_store_path) a store path.
-enum HandlePathOutcome {
+pub(crate) enum HandlePathOutcome {
     /// The store path's NAR and NARInfo were both pushed to the cache.
     PushedNarAndNarInfo { nar_size: u64, narinfo_size: u64 },
 
@@ -57,6 +53,17 @@ enum HandlePathOutcome {
 
     /// The path was already cached.
     Skipped,
+}
+
+/// The type of error that can occur when [handling](handle_store_path) a store
+/// path.
+pub(crate) enum HandlePathError<C: Cache, N: Nix> {
+    CheckHasNar(C::Error),
+    CheckHasNarInfo(C::Error),
+    WriteNar(C::Error),
+    WriteNarInfo(C::Error),
+    GetNar(N::Error),
+    GetNarInfo(N::Error),
 }
 
 enum Event<Writer> {
@@ -76,7 +83,7 @@ pub(crate) async fn run<Ctx: Context>(
 
     let mut report = ActionReport::<Ctx>::default();
 
-    let _result_writer = loop {
+    let drain_progress_writer = loop {
         select! {
             io = io_stream.select_next_some() => {
                 ctx.spawner().spawn(handle_io(io, message_tx.clone())).detach();
@@ -123,12 +130,26 @@ pub(crate) async fn run<Ctx: Context>(
         };
     };
 
+    let writer = pin!(drain_progress_writer);
+
+    let mut reporter = ctx.create_drain_progress_reporter(writer);
+
+    reporter.report_paths_left_to_handle(handle_store_paths.len() as u32).await;
+
     while let Some((result, path)) = handle_store_paths.next().await {
         match result {
-            Ok(outcome) => outcome.update_report(&mut report),
-            Err(err) => report.path_handling_errors.push((path, err)),
+            Ok(outcome) => {
+                reporter.report_path_handling_outcome(&path, &outcome).await;
+                outcome.update_report(&mut report);
+            },
+            Err(err) => {
+                reporter.report_path_handling_error(&path, &err).await;
+                report.path_handling_errors.push((path, err));
+            },
         }
     }
+
+    reporter.report_final_report(report).await;
 }
 
 async fn handle_io<I: Io>(

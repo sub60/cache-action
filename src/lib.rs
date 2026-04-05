@@ -9,6 +9,7 @@ mod protocol;
 mod push;
 mod real_cache;
 mod real_context;
+mod real_drain_progress_reporter;
 mod start;
 mod tokio;
 
