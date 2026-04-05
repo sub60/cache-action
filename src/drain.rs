@@ -17,6 +17,11 @@ pub struct DrainArgs {
     socket: PathBuf,
 }
 
+enum DrainError {
+    ConnectToSocket(io::Error),
+    WriteMessage(io::Error),
+}
+
 pub(crate) fn drain(args: DrainArgs) {
     let drain_result: Result<(), DrainError> =
         Tokio::new().block_on(async move {
@@ -49,11 +54,6 @@ pub(crate) fn drain(args: DrainArgs) {
         eprintln!("{drain_error}");
         process::exit(1);
     }
-}
-
-enum DrainError {
-    ConnectToSocket(io::Error),
-    WriteMessage(io::Error),
 }
 
 impl fmt::Display for DrainError {

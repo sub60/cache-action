@@ -19,6 +19,11 @@ pub struct PushArgs {
     store_paths: Vec<NixStorePath<StoreDir>>,
 }
 
+enum PushError {
+    ConnectToSocket(io::Error),
+    WriteMessage(io::Error),
+}
+
 pub(crate) fn push(args: PushArgs) {
     let push_result: Result<(), PushError> =
         Tokio::new().block_on(async move {
@@ -43,11 +48,6 @@ pub(crate) fn push(args: PushArgs) {
         eprintln!("{push_error}");
         process::exit(1);
     }
-}
-
-enum PushError {
-    ConnectToSocket(io::Error),
-    WriteMessage(io::Error),
 }
 
 impl fmt::Display for PushError {

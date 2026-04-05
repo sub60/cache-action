@@ -19,7 +19,7 @@ impl context::Context for RealContext {
     type Spawner = TokioSpawner;
 
     fn nix(&self) -> &Self::Nix {
-        &NixCli {}
+        &NixCli
     }
 
     fn spawner(&self) -> &Self::Spawner {

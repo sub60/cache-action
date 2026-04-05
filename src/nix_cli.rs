@@ -1,13 +1,14 @@
 use core::convert::Infallible;
 
 use bytes::Bytes;
+use futures::Stream;
 use nix_types::{NarInfo, NixStorePath};
 use smol_str::SmolStr;
 
 use crate::context;
 use crate::protocol::StoreDir;
 
-pub(crate) struct NixCli {}
+pub(crate) struct NixCli;
 
 impl context::Nix for NixCli {
     type Error = Infallible;
@@ -29,8 +30,7 @@ impl context::Nix for NixCli {
     async fn store_closure(
         &self,
         _store_path: &NixStorePath<StoreDir>,
-    ) -> Result<impl futures::Stream<Item = NixStorePath<StoreDir>>, Self::Error>
-    {
+    ) -> Result<impl Stream<Item = NixStorePath<StoreDir>>, Self::Error> {
         Ok(futures::stream::pending())
     }
 }

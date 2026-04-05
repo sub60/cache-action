@@ -1,13 +1,17 @@
 //! TODO: docs.
 
 use core::fmt;
+use core::pin::Pin;
+use core::task::{Context, Poll};
 use std::os::unix::net::UnixListener as StdUnixListener;
 use std::path::PathBuf;
 use std::{io, process};
 
+use async_compat::Compat;
+use futures::Stream;
 use nix::unistd;
 use nix_types::{CacheName, UserName};
-use tokio::net::UnixListener as TokioUnixListener;
+use tokio::net::{UnixListener as TokioUnixListener, UnixStream};
 
 use crate::real_cache::{CacheConnectError, RealCache};
 use crate::real_context::RealContext;
@@ -24,6 +28,19 @@ pub struct StartArgs {
     cache: CacheName,
     #[arg(long)]
     auth_token: AuthToken,
+}
+
+enum StartError {
+    BindSocket(io::Error),
+    ConnectToCache(CacheConnectError),
+    CreatePipe(nix::Error),
+    DaemonDidntStart,
+    ForkProcess(nix::Error),
+}
+
+/// A [`Stream`] of accepted connections from a [`TokioUnixListener`].
+struct UnixStreams {
+    listener: TokioUnixListener,
 }
 
 pub(crate) fn start(args: StartArgs) {
@@ -47,7 +64,7 @@ fn start_inner(args: StartArgs) -> Result<(), StartError> {
     // Create a pipe for the daemon process to signal readiness.
     let (read_fd, write_fd) = unistd::pipe().map_err(StartError::CreatePipe)?;
 
-    // SAFETY: todo.
+    // SAFETY: the process is fully single-threaded at this point.
     let fork_result =
         unsafe { unistd::fork() }.map_err(StartError::ForkProcess)?;
 
@@ -70,8 +87,6 @@ fn start_inner(args: StartArgs) -> Result<(), StartError> {
             // We only write to the parent process.
             drop(read_fd);
 
-            let _ = unistd::setsid();
-
             let tokio = Tokio::new();
 
             let context = RealContext::new(tokio.spawner());
@@ -91,7 +106,8 @@ fn start_inner(args: StartArgs) -> Result<(), StartError> {
                 let _ = unistd::write(&write_fd, &[1]);
                 drop(write_fd);
 
-                event_loop::run(cache, listener, &context).await;
+                event_loop::run(cache, UnixStreams { listener }, &context)
+                    .await;
             });
         },
     }
@@ -99,12 +115,26 @@ fn start_inner(args: StartArgs) -> Result<(), StartError> {
     Ok(())
 }
 
-enum StartError {
-    BindSocket(io::Error),
-    ConnectToCache(CacheConnectError),
-    CreatePipe(nix::Error),
-    DaemonDidntStart,
-    ForkProcess(nix::Error),
+impl Stream for UnixStreams {
+    type Item = Compat<UnixStream>;
+
+    fn poll_next(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
+        loop {
+            match self.listener.poll_accept(cx) {
+                Poll::Ready(Ok((stream, _addr))) => {
+                    return Poll::Ready(Some(Compat::new(stream)));
+                },
+                Poll::Ready(Err(err)) => {
+                    eprintln!("Couldn't accept stream: {err}");
+                    continue;
+                },
+                Poll::Pending => return Poll::Pending,
+            }
+        }
+    }
 }
 
 impl fmt::Display for StartError {
