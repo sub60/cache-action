@@ -1,4 +1,5 @@
 use core::pin::pin;
+use std::collections::HashSet;
 
 use futures::stream::{FusedStream, FuturesUnordered};
 use futures::{AsyncRead, AsyncWrite, StreamExt, select};
@@ -80,6 +81,7 @@ pub(crate) async fn run<Ctx: Context>(
 
     let mut store_closures = FuturesUnordered::new();
     let mut handle_store_paths = FuturesUnordered::new();
+    let mut handled_store_hashes = HashSet::new();
 
     let mut report = ActionReport::<Ctx>::default();
 
@@ -107,6 +109,10 @@ pub(crate) async fn run<Ctx: Context>(
                 match closure_res {
                     Ok(store_paths) => {
                         for path in store_paths {
+                            // Skip this path if it's already been handled.
+                            if handled_store_hashes.contains(path.hash()) {
+                                continue;
+                            }
                             let cache = cache.clone();
                             let nix = ctx.nix().clone();
                             let fut = async move {
@@ -122,6 +128,7 @@ pub(crate) async fn run<Ctx: Context>(
                 }
             },
             (result, path) = handle_store_paths.select_next_some() => {
+                handled_store_hashes.insert(*path.hash());
                 match result {
                     Ok(outcome) => outcome.update_report(&mut report),
                     Err(err) => report.path_handling_errors.push((path, err)),
