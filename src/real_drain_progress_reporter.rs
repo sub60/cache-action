@@ -1,4 +1,4 @@
-use futures::AsyncWrite;
+use futures::{AsyncWrite, AsyncWriteExt};
 use nix_types::NixStorePath;
 
 use crate::protocol::StoreDir;
@@ -21,7 +21,6 @@ impl<W: AsyncWrite + Unpin> context::DrainProgressReporter
         &mut self,
         _num_paths_left_to_handle: u32,
     ) {
-        todo!()
     }
 
     async fn report_path_handling_outcome(
@@ -29,7 +28,6 @@ impl<W: AsyncWrite + Unpin> context::DrainProgressReporter
         _path: &NixStorePath<StoreDir>,
         _outcome: &event_loop::HandlePathOutcome,
     ) {
-        todo!()
     }
 
     async fn report_path_handling_error<C: context::Cache, N: context::Nix>(
@@ -37,13 +35,17 @@ impl<W: AsyncWrite + Unpin> context::DrainProgressReporter
         _path: &NixStorePath<StoreDir>,
         _error: &event_loop::HandlePathError<C, N>,
     ) {
-        todo!()
     }
 
     async fn report_final_report<Ctx: context::Context>(
-        self,
-        _report: event_loop::ActionReport<Ctx>,
+        mut self,
+        report: event_loop::ActionReport<Ctx>,
     ) {
-        todo!()
+        let msg = format!(
+            "Pushed {} paths, {} bytes",
+            report.num_paths_pushed, report.num_bytes_pushed
+        );
+        let _ = self.writer.write_all(msg.as_bytes()).await;
+        let _ = self.writer.flush().await;
     }
 }

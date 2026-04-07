@@ -8,7 +8,10 @@ use crate::protocol::StoreDir;
 use crate::{AuthToken, context};
 
 #[derive(Clone)]
-pub(crate) struct RealCache {}
+pub(crate) struct RealCache {
+    _owner: UserName,
+    _name: CacheName,
+}
 
 #[derive(Debug)]
 pub(crate) enum CacheConnectError {}
@@ -20,7 +23,7 @@ impl RealCache {
         _name: CacheName,
         _auth: AuthToken,
     ) -> Result<Self, CacheConnectError> {
-        todo!()
+        Ok(Self { _owner, _name })
     }
 }
 
@@ -31,25 +34,25 @@ impl context::Cache for RealCache {
         &self,
         _nar_filename: NarFileName,
     ) -> Result<bool, Self::Error> {
-        todo!()
+        Ok(false)
     }
 
     async fn has_narinfo(
         &self,
         _narinfo_filename: NarInfoFileName,
     ) -> Result<bool, Self::Error> {
-        todo!()
+        Ok(false)
     }
 
     async fn write_nar(&self, _nar_bytes: Bytes) -> Result<(), Self::Error> {
-        todo!()
+        Ok(())
     }
 
     async fn write_narinfo(
         &self,
-        _narinfo: NarInfo<impl fmt::Display, StoreDir>,
+        narinfo: NarInfo<impl fmt::Display, StoreDir>,
     ) -> Result<u64, Self::Error> {
-        todo!()
+        Ok(narinfo.to_string().len() as u64)
     }
 }
 
