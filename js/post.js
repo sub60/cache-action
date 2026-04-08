@@ -7,12 +7,11 @@ const { STATE_SOCKET_PATH, STATE_BINARY_PATH } = require("./state");
 const socketPath = core.getState(STATE_SOCKET_PATH);
 const binaryPath = core.getState(STATE_BINARY_PATH);
 
+// If either of these isn't set it means the `main` step failed.
 if (!socketPath || !binaryPath) {
-  core.info("No saved daemon state found; skipping shutdown.");
+  core.info("Action state is missing, skipping post step");
   process.exit(0);
 }
-
-core.info(`Stopping daemon via socket '${socketPath}'`);
 
 const { status } = spawnSync(binaryPath, ["drain", "--socket", socketPath], {
   stdio: "inherit",
