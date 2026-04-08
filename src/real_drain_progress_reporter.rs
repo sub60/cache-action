@@ -127,21 +127,18 @@ struct HumanReadableByteSize(u64);
 
 impl fmt::Display for HumanReadableByteSize {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        const UNITS: [&str; 7] =
-            ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"];
+        const UNITS: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
 
         let mut value = self.0 as f64;
         let mut unit_idx = 0;
 
-        while unit_idx < UNITS.len() - 1 && value >= 1024.0 {
+        while unit_idx + 1 < UNITS.len() && value >= 1024.0 {
             value /= 1024.0;
             unit_idx += 1;
         }
 
         if unit_idx == 0 {
             write!(f, "{} {}", self.0, UNITS[unit_idx])
-        } else if value >= 10.0 {
-            write!(f, "{value:.0} {}", UNITS[unit_idx])
         } else {
             write!(f, "{value:.1} {}", UNITS[unit_idx])
         }
@@ -158,7 +155,7 @@ mod tests {
         assert_eq!(HumanReadableByteSize(1023).to_string(), "1023 B");
         assert_eq!(HumanReadableByteSize(1024).to_string(), "1.0 KiB");
         assert_eq!(HumanReadableByteSize(1536).to_string(), "1.5 KiB");
-        assert_eq!(HumanReadableByteSize(10 * 1024).to_string(), "10 KiB");
+        assert_eq!(HumanReadableByteSize(42690).to_string(), "41.7 KiB");
         assert_eq!(HumanReadableByteSize(1024 * 1024).to_string(), "1.0 MiB");
     }
 }
