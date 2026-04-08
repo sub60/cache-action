@@ -43,21 +43,23 @@ pub trait Cache: Clone + Send + 'static {
 
     fn has_nar(
         &self,
-        nar_filename: NarFileName,
+        nar_filename: &NarFileName,
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 
     fn has_narinfo(
         &self,
-        narinfo_filename: NarInfoFileName,
+        narinfo_filename: &NarInfoFileName,
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 
     fn write_nar(
         &self,
+        nar_filename: NarFileName,
         nar_bytes: Bytes,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     fn write_narinfo(
         &self,
+        narinfo_filename: NarInfoFileName,
         narinfo: NarInfo<impl fmt::Display + Send, StoreDir>,
     ) -> impl Future<Output = Result<u64, Self::Error>> + Send;
 }

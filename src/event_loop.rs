@@ -189,10 +189,12 @@ async fn handle_store_path<C: Cache, N: Nix>(
     cache: C,
     nix: N,
 ) -> Result<HandlePathOutcome, HandlePathError<C, N>> {
+    let narinfo_filename = NarInfoFileName { store_hash: *store_path.hash() };
+
     // If the cache already has the NARInfo then it must also have the NAR, so
     // we can skip this path.
     if cache
-        .has_narinfo(NarInfoFileName { store_hash: *store_path.hash() })
+        .has_narinfo(&narinfo_filename)
         .await
         .map_err(HandlePathError::CheckHasNarInfo)?
     {
@@ -208,7 +210,7 @@ async fn handle_store_path<C: Cache, N: Nix>(
         nix.pack_nar(store_path).await.map_err(HandlePathError::GetNar)?;
 
     let has_nar = cache
-        .has_nar(nar_filename)
+        .has_nar(&nar_filename)
         .await
         .map_err(HandlePathError::CheckHasNar)?;
 
@@ -217,14 +219,17 @@ async fn handle_store_path<C: Cache, N: Nix>(
     // Just like `nix copy --to`, we write the NAR *before* the NARInfo to avoid
     // the cache server temporarily reporting false positives.
     if !has_nar {
-        cache.write_nar(nar_bytes).await.map_err(HandlePathError::WriteNar)?;
+        cache
+            .write_nar(nar_filename, nar_bytes)
+            .await
+            .map_err(HandlePathError::WriteNar)?;
     } else {
         // Drop the NAR bytes as early as possible.
         drop(nar_bytes);
     }
 
     let narinfo_size = cache
-        .write_narinfo(narinfo)
+        .write_narinfo(narinfo_filename, narinfo)
         .await
         .map_err(HandlePathError::WriteNarInfo)?;
 
