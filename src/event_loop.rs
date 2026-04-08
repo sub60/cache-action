@@ -1,3 +1,4 @@
+use core::fmt;
 use core::pin::pin;
 use std::collections::HashSet;
 
@@ -261,6 +262,34 @@ impl<Ctx: Context> Default for ActionReport<Ctx> {
             num_paths_skipped: 0,
             path_closure_errors: Default::default(),
             path_handling_errors: Default::default(),
+        }
+    }
+}
+
+impl<C: Cache, N: Nix> fmt::Display for HandlePathError<C, N> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::CheckHasNar(err) => {
+                write!(f, "couldn't check NAR existence on remote cache: {err}")
+            },
+            Self::CheckHasNarInfo(err) => {
+                write!(
+                    f,
+                    "couldn't check NARInfo existence on remote cache: {err}"
+                )
+            },
+            Self::WriteNar(err) => {
+                write!(f, "couldn't write NAR to remote cache: {err}")
+            },
+            Self::WriteNarInfo(err) => {
+                write!(f, "couldn't write NARInfo to remote cache: {err}")
+            },
+            Self::GetNar(err) => {
+                write!(f, "couldn't get NAR bytes: {err}")
+            },
+            Self::GetNarInfo(err) => {
+                write!(f, "couldn't get NARInfo: {err}")
+            },
         }
     }
 }
