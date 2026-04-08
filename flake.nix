@@ -1,9 +1,6 @@
 {
   inputs = {
-    crate2nix = {
-      url = "github:nix-community/crate2nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    crane.url = "github:ipetkov/crane";
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
@@ -18,7 +15,7 @@
   outputs =
     {
       self,
-      crate2nix,
+      crane,
       nixpkgs,
       rust-overlay,
       treefmt-nix,
@@ -39,71 +36,26 @@
           ./rust-toolchain.toml
         ).override
           {
-            targets = [ pkgs.stdenv.hostPlatform.rust.rustcTarget ];
+            targets = [ pkgs.stdenv.targetPlatform.rust.rustcTarget ];
           };
 
-      mkCargoNix =
+      mkCraneLib = pkgs: (crane.mkLib pkgs).overrideToolchain mkToolchain;
+
+      mkPackage =
         pkgs:
         let
-          crate2nixToolsBase = pkgs.callPackage "${crate2nix}/tools.nix" { };
-          parseGitSource = crate2nixToolsBase.internal.parseGitSource;
-
-          fetchGitRepo =
-            source:
-            let
-              parsed = parseGitSource source;
-            in
-            builtins.fetchGit (
-              {
-                submodules = true;
-                inherit (parsed) url;
-                rev = if parsed.urlFragment == null then parsed.rev else parsed.urlFragment;
-              }
-              // (
-                if (parsed ? branch || parsed ? tag) then
-                  { ref = parsed.branch or "refs/tags/${parsed.tag}"; }
-                else
-                  { allRefs = true; }
-              )
-            );
-
-          fetchGitWithBuiltins =
-            args:
-            let
-              src = fetchGitRepo "git+${args.url}#${args.rev}";
-            in
-            src // { name = args.name or (builtins.baseNameOf args.url); };
-
-          mkPkgsWithSshGit =
-            cargoPkgs:
-            cargoPkgs
-            // {
-              fetchgit = fetchGitWithBuiltins;
-            }
-            // nixpkgs.lib.optionalAttrs (cargoPkgs ? buildPackages) {
-              buildPackages = cargoPkgs.buildPackages // {
-                fetchgit = fetchGitWithBuiltins;
-              };
-            };
-
-          cargoPkgs = mkPkgsWithSshGit pkgs;
-          crate2nixTools = import "${crate2nix}/tools.nix" {
-            pkgs = cargoPkgs;
+          craneLib = mkCraneLib pkgs;
+          src = craneLib.cleanCargoSource ./.;
+          commonArgs = {
+            inherit src;
+            cargoVendorDir = craneLib.vendorCargoDeps { inherit src; };
+            strictDeps = true;
+            doCheck = false;
+            CARGO_NET_GIT_FETCH_WITH_CLI = "true";
           };
-          generatedCargoNix = crate2nixTools.generatedCargoNix {
-            name = "cache-action";
-            src = ./.;
-          };
+          cargoArtifacts = craneLib.buildDepsOnly commonArgs;
         in
-        import generatedCargoNix {
-          pkgs = cargoPkgs;
-          buildRustCrateForPkgs =
-            cratePkgs:
-            cratePkgs.buildRustCrate.override {
-              cargo = mkToolchain cratePkgs;
-              rustc = mkToolchain cratePkgs;
-            };
-        };
+        craneLib.buildPackage (commonArgs // { inherit cargoArtifacts; });
 
       mkTreefmt =
         pkgs:
@@ -136,9 +88,6 @@
     {
       packages = forEachSystem (
         _system: pkgs:
-        let
-          mkPackage = pkgs: (mkCargoNix pkgs).rootCrate.build;
-        in
         {
           default = mkPackage pkgs;
           aarch64-linux = mkPackage pkgs.pkgsCross.aarch64-multiplatform-musl;
