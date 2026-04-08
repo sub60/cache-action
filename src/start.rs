@@ -5,7 +5,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 use std::os::unix::net::UnixListener as StdUnixListener;
 use std::path::PathBuf;
-use std::{io, process};
+use std::{fs, io, process};
 
 use async_compat::Compat;
 use futures::Stream;
@@ -33,6 +33,7 @@ pub struct StartArgs {
 
 enum StartError {
     BindSocket(io::Error),
+    CanonicalizeSocketPath(PathBuf, io::Error),
     ConnectToCache(CacheConnectError),
     CreatePipe(nix::Error),
     DaemonDidntStart,
@@ -81,9 +82,14 @@ fn start_inner(args: StartArgs) -> Result<(), StartError> {
                 Ok(_more_than_one) => unreachable!("child writes 1 byte"),
             }
 
+            let socket_path =
+                fs::canonicalize(&args.socket).map_err(|err| {
+                    StartError::CanonicalizeSocketPath(args.socket, err)
+                })?;
+
             println!(
                 "Started daemon with process ID {child}, listening on {}",
-                args.socket.display()
+                socket_path.display()
             );
         },
 
@@ -162,6 +168,13 @@ impl fmt::Display for StartError {
         match self {
             Self::BindSocket(io_error) => {
                 write!(f, "Couldn't bind to Unix domain socket: {io_error}")
+            },
+            Self::CanonicalizeSocketPath(path, io_err) => {
+                write!(
+                    f,
+                    "Couldn't canonicalize '{}': {io_err}",
+                    path.display()
+                )
             },
             Self::ConnectToCache(error) => error.fmt(f),
             Self::CreatePipe(error) => {
