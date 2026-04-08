@@ -75,8 +75,11 @@ fn start_inner(args: StartArgs) -> Result<(), StartError> {
             drop(write_fd);
 
             // Block until the child signals readiness.
-            unistd::read(&read_fd, &mut [0u8; 1])
-                .map_err(|_err| StartError::DaemonDidntStart)?;
+            match unistd::read(&read_fd, &mut [0u8; 2]) {
+                Ok(1) => {},
+                Ok(0) | Err(_) => return Err(StartError::DaemonDidntStart),
+                Ok(_more_than_one) => unreachable!("child writes 1 byte"),
+            }
 
             println!(
                 "Started daemon with process ID {child}, listening on {}",
