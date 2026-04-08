@@ -1,6 +1,6 @@
 [package]
 name = "cache-action"
-version = "0.0.7"
+version = "0.0.8"
 edition = "2024"
 
 [dependencies]
@@ -12,7 +12,7 @@ flume = { version = "0.12" }
 futures = { version = "0.3" }
 memchr = "2"
 nix = { version = "0.31", features = ["process"] }
-nix-types = { git = "ssh://git@github.com/sub60/cache.git", package = "types" }
+nix-types = { git = "ssh://git@github.com/sub60/nix-types.git" }
 pin-project-lite = "0.2"
 smol_str = "0.3.6"
 tokio = { version = "1", default-features = false, features = [
