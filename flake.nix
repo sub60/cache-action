@@ -45,14 +45,58 @@
       mkCargoNix =
         pkgs:
         let
-          inherit (pkgs.stdenv.buildPlatform) system;
-          generatedCargoNix = crate2nix.tools.${system}.generatedCargoNix {
+          crate2nixToolsBase = pkgs.callPackage "${crate2nix}/tools.nix" { };
+          parseGitSource = crate2nixToolsBase.internal.parseGitSource;
+
+          fetchGitRepo =
+            source:
+            let
+              parsed = parseGitSource source;
+            in
+            builtins.fetchGit (
+              {
+                submodules = true;
+                inherit (parsed) url;
+                rev = if parsed.urlFragment == null then parsed.rev else parsed.urlFragment;
+              }
+              // (
+                if (parsed ? branch || parsed ? tag) then
+                  { ref = parsed.branch or "refs/tags/${parsed.tag}"; }
+                else
+                  { allRefs = true; }
+              )
+            );
+
+          fetchGitWithBuiltins =
+            args:
+            let
+              src = fetchGitRepo "git+${args.url}#${args.rev}";
+            in
+            src // { name = args.name or (builtins.baseNameOf args.url); };
+
+          mkPkgsWithSshGit =
+            cargoPkgs:
+            cargoPkgs
+            // {
+              fetchgit = fetchGitWithBuiltins;
+            }
+            // nixpkgs.lib.optionalAttrs (cargoPkgs ? buildPackages) {
+              buildPackages = cargoPkgs.buildPackages // {
+                fetchgit = fetchGitWithBuiltins;
+              };
+            };
+
+          cargoPkgs = mkPkgsWithSshGit pkgs;
+          crate2nixTools = import "${crate2nix}/tools.nix" {
+            pkgs = cargoPkgs;
+          };
+          generatedCargoNix = crate2nixTools.generatedCargoNix {
             name = "cache-action";
             src = ./.;
           };
         in
         import generatedCargoNix {
-          inherit pkgs;
+          pkgs = cargoPkgs;
           buildRustCrateForPkgs =
             cratePkgs:
             cratePkgs.buildRustCrate.override {
