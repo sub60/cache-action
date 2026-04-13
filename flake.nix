@@ -42,13 +42,17 @@
 
       mkNixbNixDev =
         pkgs:
-        (pkgs.pkgsStatic.nixVersions.nix_2_34.override {
-          # nixpkgs currently enables the embedded sandbox shell for all
-          # static builds, but only wires the busybox sandbox shell path on
-          # Linux. Disable the embedded shell on non-Linux targets so the
-          # static package still builds.
-          embeddedSandboxShell = pkgs.stdenv.hostPlatform.isLinux && pkgs.stdenv.hostPlatform.isStatic;
-        }).dev;
+        (pkgs.pkgsStatic.nixVersions.nix_2_34.overrideScope (
+          _final: prev: {
+            nix-store = prev.nix-store.override {
+              # nixpkgs currently enables the embedded sandbox shell for all
+              # static builds, but only wires the busybox sandbox shell path
+              # on Linux. Disable the embedded shell on non-Linux targets so
+              # the static package still builds.
+              embeddedSandboxShell = pkgs.stdenv.hostPlatform.isLinux && pkgs.stdenv.hostPlatform.isStatic;
+            };
+          }
+        )).dev;
 
       mkPackage =
         pkgs:
