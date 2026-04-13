@@ -119,6 +119,10 @@
       devShells = forEachSystem (
         _system: pkgs: {
           default = pkgs.mkShell {
+            buildInputs = [
+              pkgs.pkg-config
+              pkgs.nixVersions.nix_2_34.dev
+            ];
             nativeBuildInputs = [
               ((mkToolchain pkgs).override {
                 extensions = [
