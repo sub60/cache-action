@@ -32,19 +32,29 @@
 
       mkToolchain =
         pkgs:
-        ((rust-overlay.lib.mkRustBin { } pkgs.buildPackages).fromRustupToolchainFile
-          ./rust-toolchain.toml
-        ).override
+        ((rust-overlay.lib.mkRustBin { } pkgs.buildPackages).fromRustupToolchainFile ./rust-toolchain.toml)
+        .override
           {
             targets = [ pkgs.stdenv.targetPlatform.rust.rustcTarget ];
           };
 
       mkCraneLib = pkgs: (crane.mkLib pkgs).overrideToolchain mkToolchain;
 
+      mkNixbNixDev =
+        pkgs:
+        (pkgs.pkgsStatic.nixVersions.nix_2_34.override {
+          # nixpkgs currently enables the embedded sandbox shell for all
+          # static builds, but only wires the busybox sandbox shell path on
+          # Linux. Disable the embedded shell on non-Linux targets so the
+          # static package still builds.
+          embeddedSandboxShell = pkgs.stdenv.hostPlatform.isLinux && pkgs.stdenv.hostPlatform.isStatic;
+        }).dev;
+
       mkPackage =
         pkgs:
         let
           craneLib = mkCraneLib pkgs;
+          nixbNixDev = mkNixbNixDev pkgs;
           src = craneLib.cleanCargoSource ./.;
           commonArgs = {
             inherit src;
@@ -52,6 +62,9 @@
             strictDeps = true;
             doCheck = false;
             CARGO_NET_GIT_FETCH_WITH_CLI = "true";
+            PKG_CONFIG_ALL_STATIC = "1";
+            nativeBuildInputs = [ pkgs.buildPackages.pkg-config ];
+            buildInputs = [ nixbNixDev ];
           };
           cargoArtifacts = craneLib.buildDepsOnly commonArgs;
         in
@@ -117,12 +130,14 @@
       );
 
       devShells = forEachSystem (
-        _system: pkgs: {
+        _system: pkgs:
+        let
+          nixbNixDev = mkNixbNixDev pkgs;
+        in
+        {
           default = pkgs.mkShell {
-            buildInputs = [
-              pkgs.pkg-config
-              pkgs.nixVersions.nix_2_34.dev
-            ];
+            PKG_CONFIG_ALL_STATIC = "1";
+            buildInputs = [ nixbNixDev ];
             nativeBuildInputs = [
               ((mkToolchain pkgs).override {
                 extensions = [
@@ -132,6 +147,7 @@
                   "rustfmt"
                 ];
               })
+              pkgs.buildPackages.pkg-config
               (mkTreefmt pkgs).config.build.programs.prettier
               pkgs.nodejs
               pkgs.typescript-language-server
@@ -140,9 +156,7 @@
         }
       );
 
-      formatter = forEachSystem (
-        _system: pkgs: (mkTreefmt pkgs).config.build.wrapper
-      );
+      formatter = forEachSystem (_system: pkgs: (mkTreefmt pkgs).config.build.wrapper);
 
       checks = forEachSystem (
         _system: pkgs: {

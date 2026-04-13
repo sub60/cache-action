@@ -13,7 +13,8 @@ futures = { version = "0.3" }
 memchr = "2"
 nix = { version = "0.31", features = ["process"] }
 nix-types = { git = "ssh://git@github.com/sub60/nix-types.git" }
-nixb = { path = "../../noib3/nixb/crates/nixb" }
+# Keep this in sync with the pinned static Nix package in `flake.nix`.
+nixb = { path = "../../noib3/nixb/crates/nixb", default-features = false, features = ["std", "nix-2-34"] }
 pin-project-lite = "0.2"
 reqwest = { version = "0.12", default-features = false, features = [
   "rustls-tls",
@@ -26,3 +27,6 @@ tokio = { version = "1", default-features = false, features = [
   "rt-multi-thread",
 ] }
 url = "2"
+
+[build-dependencies]
+pkg-config = "0.3"
