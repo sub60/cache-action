@@ -1,5 +1,4 @@
 diff --git a/src/libstore/filetransfer.cc b/src/libstore/filetransfer.cc
-index 8b4ca99e66..1d9633f0b1 100644
 --- a/src/libstore/filetransfer.cc
 +++ b/src/libstore/filetransfer.cc
 @@ -20,7 +20,9 @@
@@ -12,15 +11,15 @@ index 8b4ca99e66..1d9633f0b1 100644
  
  #include <cmath>
  #include <cstring>
-@@ -54,6 +56,7 @@ FileTransferSettings fileTransferSettings;
+@@ -53,6 +55,7 @@ FileTransferSettings::FileTransferSettings()
+ FileTransferSettings fileTransferSettings;
  
  static GlobalConfig::Register rFileTransferSettings(&fileTransferSettings);
- 
 +#if NIX_WITH_CURL_HTTP
+ 
  namespace {
  
- using curlSList = std::unique_ptr<::curl_slist, decltype([](::curl_slist * list) { ::curl_slist_free_all(list); })>;
-@@ -1036,6 +1039,35 @@ ref<FileTransfer> makeFileTransfer(const FileTransferSettings & settings)
+@@ -1056,6 +1059,38 @@ ref<FileTransfer> makeFileTransfer(const FileTransferSettings & settings)
  {
      return makeCurlFileTransfer(settings);
  }
@@ -60,10 +59,9 @@ index 8b4ca99e66..1d9633f0b1 100644
  void FileTransferRequest::setupForS3()
  {
 diff --git a/src/libstore/globals.cc b/src/libstore/globals.cc
-index 12982aaf11..1a8d92037b 100644
 --- a/src/libstore/globals.cc
 +++ b/src/libstore/globals.cc
-@@ -17,7 +17,9 @@
+@@ -17,5 +17,7 @@
  #include <mutex>
  #include <thread>
  
@@ -71,29 +69,14 @@ index 12982aaf11..1a8d92037b 100644
  #include <curl/curl.h>
 +#endif
  #include <nlohmann/json.hpp>
- 
- #ifndef _WIN32
-@@ -592,6 +594,7 @@ void initLibStore(bool loadConfig)
- 
-     preloadNSS();
- 
+@@ -606,1 +606,3 @@
 +#if NIX_WITH_CURL_HTTP
-     /* Because of an objc quirk[1], calling curl_global_init for the first time
-        after fork() will always result in a crash.
-        Up until now the solution has been to set OBJC_DISABLE_INITIALIZE_FORK_SAFETY
-@@ -604,6 +607,7 @@ void initLibStore(bool loadConfig)
-        https://github.com/apple-oss-distributions/objc4/blob/01edf1705fbc3ff78a423cd21e03dfc21eb4d780/runtime/objc-initialize.mm#L614-L636
-     */
      curl_global_init(CURL_GLOBAL_ALL);
 +#endif
- #ifdef __APPLE__
-     /* On macOS, don't use the per-session TMPDIR (as set e.g. by
-        sshd). This breaks build users because they don't have access
 diff --git a/src/libstore/meson.build b/src/libstore/meson.build
-index 5f420f6720..3236eb662d 100644
 --- a/src/libstore/meson.build
 +++ b/src/libstore/meson.build
-@@ -117,10 +117,16 @@ deps_other += boost
+@@ -118,8 +118,13 @@ deps_other += boost
  # This is quite new, but curl has a bunch of known issues with write pausing and decompression.
  # Please use libcurl >= 8.17. See https://github.com/curl/curl/issues/19334, https://github.com/curl/curl/issues/16280, https://github.com/curl/curl/issues/16955 if in doubt.
  # Patch out this check at your own risk.
@@ -111,10 +94,9 @@ index 5f420f6720..3236eb662d 100644
  # seccomp only makes sense on Linux
  is_linux = host_machine.system() == 'linux'
 diff --git a/src/libstore/meson.options b/src/libstore/meson.options
-index 7f9fb2a4f9..04291e7bad 100644
 --- a/src/libstore/meson.options
 +++ b/src/libstore/meson.options
-@@ -1,5 +1,12 @@
+@@ -1,8 +1,15 @@
  # vim: filetype=meson
  
 +option(
@@ -127,3 +109,6 @@ index 7f9fb2a4f9..04291e7bad 100644
  option(
    'embedded-sandbox-shell',
    type : 'boolean',
+   value : false,
+   description : 'include the sandbox shell in the Nix binary',
+ )
