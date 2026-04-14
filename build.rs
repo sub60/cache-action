@@ -152,7 +152,7 @@ fn emit_fallback_search_paths(search_paths: &[String]) {
 }
 
 fn should_emit_search_path(path: &str) -> bool {
-    !(path.contains("-libiconv-") && !path.contains("-static-"))
+    !path.contains("-libiconv-") || path.contains("-static-")
 }
 
 fn emit_cpp_runtime() {
