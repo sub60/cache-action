@@ -61,15 +61,18 @@ diff --git a/src/libstore/filetransfer.cc b/src/libstore/filetransfer.cc
 diff --git a/src/libstore/globals.cc b/src/libstore/globals.cc
 --- a/src/libstore/globals.cc
 +++ b/src/libstore/globals.cc
-@@ -17,5 +17,7 @@
+@@ -17,5 +17,9 @@
  #include <mutex>
  #include <thread>
  
++#include "store-config-private.hh"
++
 +#if NIX_WITH_CURL_HTTP
  #include <curl/curl.h>
 +#endif
  #include <nlohmann/json.hpp>
-@@ -606,1 +606,3 @@
+@@ -605,2 +605,4 @@
+     */
 +#if NIX_WITH_CURL_HTTP
      curl_global_init(CURL_GLOBAL_ALL);
 +#endif
