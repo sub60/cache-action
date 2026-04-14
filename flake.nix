@@ -40,25 +40,37 @@
 
       mkCraneLib = pkgs: (crane.mkLib pkgs).overrideToolchain mkToolchain;
 
-      mkNixbNixDev =
+      mkNixbStoreBuildInputs =
         pkgs:
-        (pkgs.pkgsStatic.nixVersions.nix_2_34.overrideScope (
-          _final: prev: {
-            nix-store = prev.nix-store.override {
-              # nixpkgs currently enables the embedded sandbox shell for all
-              # static builds, but only wires the busybox sandbox shell path
-              # on Linux. Disable the embedded shell on non-Linux targets so
-              # the static package still builds.
-              embeddedSandboxShell = pkgs.stdenv.hostPlatform.isLinux && pkgs.stdenv.hostPlatform.isStatic;
-            };
-          }
-        )).dev;
+        let
+          components = pkgs.pkgsStatic.nixVersions.nixComponents_2_34.overrideScope (
+            _final: prev: {
+              nix-store = prev.nix-store.override {
+                # nixpkgs currently enables the embedded sandbox shell for all
+                # static builds, but only wires the busybox sandbox shell path
+                # on Linux. Disable the embedded shell on non-Linux targets so
+                # the static package still builds.
+                embeddedSandboxShell = pkgs.stdenv.hostPlatform.isLinux && pkgs.stdenv.hostPlatform.isStatic;
+                # Local libstore use does not need authenticated S3 fetcher
+                # support, and disabling it keeps the static link closure
+                # smaller.
+                withAWS = false;
+              };
+            }
+          );
+        in
+        [
+          components.nix-util.dev
+          components.nix-util-c.dev
+          components.nix-store.dev
+          components.nix-store-c.dev
+        ];
 
       mkPackage =
         pkgs:
         let
           craneLib = mkCraneLib pkgs;
-          nixbNixDev = mkNixbNixDev pkgs;
+          nixbStoreBuildInputs = mkNixbStoreBuildInputs pkgs;
           src = craneLib.cleanCargoSource ./.;
           commonArgs = {
             inherit src;
@@ -68,7 +80,7 @@
             CARGO_NET_GIT_FETCH_WITH_CLI = "true";
             PKG_CONFIG_ALL_STATIC = "1";
             nativeBuildInputs = [ pkgs.buildPackages.pkg-config ];
-            buildInputs = [ nixbNixDev ];
+            buildInputs = nixbStoreBuildInputs;
           };
           cargoArtifacts = craneLib.buildDepsOnly commonArgs;
         in
@@ -136,12 +148,12 @@
       devShells = forEachSystem (
         _system: pkgs:
         let
-          nixbNixDev = mkNixbNixDev pkgs;
+          nixbStoreBuildInputs = mkNixbStoreBuildInputs pkgs;
         in
         {
           default = pkgs.mkShell {
             PKG_CONFIG_ALL_STATIC = "1";
-            buildInputs = [ nixbNixDev ];
+            buildInputs = nixbStoreBuildInputs;
             nativeBuildInputs = [
               ((mkToolchain pkgs).override {
                 extensions = [
