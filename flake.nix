@@ -43,21 +43,31 @@
       mkNixbStoreBuildInputs =
         pkgs:
         let
-          components = pkgs.pkgsStatic.nixVersions.nixComponents_2_34.overrideScope (
-            _final: prev: {
-              nix-store = prev.nix-store.override {
-                # nixpkgs currently enables the embedded sandbox shell for all
-                # static builds, but only wires the busybox sandbox shell path
-                # on Linux. Disable the embedded shell on non-Linux targets so
-                # the static package still builds.
-                embeddedSandboxShell = pkgs.stdenv.hostPlatform.isLinux && pkgs.stdenv.hostPlatform.isStatic;
-                # Local libstore use does not need authenticated S3 fetcher
-                # support, and disabling it keeps the static link closure
-                # smaller.
-                withAWS = false;
-              };
-            }
-          );
+          components =
+            (pkgs.pkgsStatic.nixVersions.nixComponents_2_34.appendPatches [
+              ./nix/patches/nix-store-optional-curl.patch
+            ]).overrideScope
+              (
+                _final: prev: {
+                  nix-store =
+                    (prev.nix-store.override {
+                      # nixpkgs currently enables the embedded sandbox shell for all
+                      # static builds, but only wires the busybox sandbox shell path
+                      # on Linux. Disable the embedded shell on non-Linux targets so
+                      # the static package still builds.
+                      embeddedSandboxShell = pkgs.stdenv.hostPlatform.isLinux && pkgs.stdenv.hostPlatform.isStatic;
+                      # Local libstore use does not need authenticated S3 fetcher
+                      # support, and disabling it keeps the static link closure
+                      # smaller.
+                      withAWS = false;
+                    }).overrideAttrs
+                      (old: {
+                        mesonFlags = old.mesonFlags ++ [
+                          (pkgs.lib.mesonBool "http-client" false)
+                        ];
+                      });
+                }
+              );
         in
         [
           components.nix-util.dev

@@ -40,9 +40,11 @@ fn emit_static_pkg_config_libs(package: &str) {
     let stdout = String::from_utf8(output.stdout)
         .expect("pkg-config emitted non-UTF-8 link flags");
     let mut tokens = stdout.split_whitespace();
+    let mut search_paths = Vec::new();
 
     while let Some(token) = tokens.next() {
         if let Some(path) = token.strip_prefix("-L") {
+            search_paths.push(path.to_owned());
             println!("cargo:rustc-link-search=native={path}");
             continue;
         }
@@ -55,7 +57,7 @@ fn emit_static_pkg_config_libs(package: &str) {
         }
 
         if let Some(name) = token.strip_prefix("-l") {
-            emit_link_lib(name);
+            emit_link_lib(name, &search_paths);
             continue;
         }
 
@@ -92,8 +94,14 @@ fn emit_absolute_library(path: &str) {
     }
 }
 
-fn emit_link_lib(name: &str) {
+fn emit_link_lib(name: &str, search_paths: &[String]) {
     match name {
+        "iconv" => {
+            if emit_named_static_archive(name, search_paths) {
+                return;
+            }
+            println!("cargo:rustc-link-lib=static={name}");
+        },
         "c" | "m" | "pthread" | "sandbox" => {
             println!("cargo:rustc-link-lib={name}");
         },
@@ -101,6 +109,20 @@ fn emit_link_lib(name: &str) {
             println!("cargo:rustc-link-lib=static={name}");
         },
     }
+}
+
+fn emit_named_static_archive(name: &str, search_paths: &[String]) -> bool {
+    let archive = format!("lib{name}.a");
+
+    for dir in search_paths {
+        let candidate = Path::new(dir).join(&archive);
+        if candidate.is_file() {
+            println!("cargo:rustc-link-arg={}", candidate.display());
+            return true;
+        }
+    }
+
+    false
 }
 
 fn emit_search_paths_from_nix_ldflags() {
