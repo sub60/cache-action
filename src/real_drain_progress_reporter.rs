@@ -96,7 +96,7 @@ impl<W: AsyncWrite + Unpin> context::DrainProgressReporter
         if num_errors > 0 {
             writeln!(
                 &mut msg,
-                "{num_errors} store path{} could not be handled",
+                "{num_errors} store path{} could not be handled:",
                 if num_errors == 1 { "" } else { "s" },
             )
             .expect("never fails");

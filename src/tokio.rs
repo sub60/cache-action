@@ -29,6 +29,7 @@ impl Tokio {
     pub(crate) fn new() -> Self {
         tokio::runtime::Builder::new_multi_thread()
             .enable_io()
+            .enable_time()
             .build()
             .map(|inner| Self { inner })
             .expect("couldn't create tokio runtime")
