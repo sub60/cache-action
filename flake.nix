@@ -32,8 +32,9 @@
 
       mkToolchain =
         pkgs:
-        ((rust-overlay.lib.mkRustBin { } pkgs.buildPackages).fromRustupToolchainFile ./rust-toolchain.toml)
-        .override
+        ((rust-overlay.lib.mkRustBin { } pkgs.buildPackages).fromRustupToolchainFile
+          ./rust-toolchain.toml
+        ).override
           {
             targets = [ pkgs.stdenv.targetPlatform.rust.rustcTarget ];
           };
@@ -67,7 +68,8 @@
                       # static builds, but only wires the busybox sandbox shell path
                       # on Linux. Disable the embedded shell on non-Linux targets so
                       # the static package still builds.
-                      embeddedSandboxShell = pkgs.stdenv.hostPlatform.isLinux && pkgs.stdenv.hostPlatform.isStatic;
+                      embeddedSandboxShell =
+                        pkgs.stdenv.hostPlatform.isLinux && pkgs.stdenv.hostPlatform.isStatic;
                       # Local libstore use does not need authenticated S3 fetcher
                       # support, and disabling it keeps the static link closure
                       # smaller.
@@ -200,7 +202,9 @@
         }
       );
 
-      formatter = forEachSystem (_system: pkgs: (mkTreefmt pkgs).config.build.wrapper);
+      formatter = forEachSystem (
+        _system: pkgs: (mkTreefmt pkgs).config.build.wrapper
+      );
 
       checks = forEachSystem (
         _system: pkgs: {
