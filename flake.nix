@@ -62,8 +62,10 @@
                       withAWS = false;
                     }).overrideAttrs
                       (old: {
+                        buildInputs = pkgs.lib.remove prev.curl old.buildInputs;
                         mesonFlags = old.mesonFlags ++ [
                           (pkgs.lib.mesonBool "http-client" false)
+                          (pkgs.lib.mesonBool "extra-store-implementations" false)
                         ];
                       });
                 }

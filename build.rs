@@ -4,15 +4,17 @@ use std::path::Path;
 use std::process::Command;
 
 fn main() {
+    let fallback_search_paths = collect_search_paths_from_nix_ldflags();
+
     pkg_config::Config::new()
         .cargo_metadata(false)
         .statik(true)
         .probe("nix-store-c")
         .expect("could not find static Nix store libraries via pkg-config");
 
-    emit_search_paths_from_nix_ldflags();
+    emit_fallback_search_paths(&fallback_search_paths);
     emit_cpp_runtime();
-    emit_static_pkg_config_libs("nix-store-c");
+    emit_static_pkg_config_libs("nix-store-c", &fallback_search_paths);
 
     // nix-store's pkg-config metadata does not include all of the Boost
     // libraries that libnixstore/libnixutil actually reference in static
@@ -23,7 +25,10 @@ fn main() {
     }
 }
 
-fn emit_static_pkg_config_libs(package: &str) {
+fn emit_static_pkg_config_libs(
+    package: &str,
+    fallback_search_paths: &[String],
+) {
     let pkg_config = env::var_os("PKG_CONFIG")
         .unwrap_or_else(|| OsString::from("pkg-config"));
 
@@ -40,7 +45,7 @@ fn emit_static_pkg_config_libs(package: &str) {
     let stdout = String::from_utf8(output.stdout)
         .expect("pkg-config emitted non-UTF-8 link flags");
     let mut tokens = stdout.split_whitespace();
-    let mut search_paths = Vec::new();
+    let mut search_paths = fallback_search_paths.to_vec();
 
     while let Some(token) = tokens.next() {
         if let Some(path) = token.strip_prefix("-L") {
@@ -125,18 +130,29 @@ fn emit_named_static_archive(name: &str, search_paths: &[String]) -> bool {
     false
 }
 
-fn emit_search_paths_from_nix_ldflags() {
+fn collect_search_paths_from_nix_ldflags() -> Vec<String> {
     let Some(ldflags) = env::var_os("NIX_LDFLAGS") else {
-        return;
+        return Vec::new();
     };
 
     let ldflags = ldflags.to_string_lossy();
 
-    for flag in ldflags.split_whitespace() {
-        if let Some(path) = flag.strip_prefix("-L") {
+    ldflags
+        .split_whitespace()
+        .filter_map(|flag| flag.strip_prefix("-L").map(ToOwned::to_owned))
+        .collect()
+}
+
+fn emit_fallback_search_paths(search_paths: &[String]) {
+    for path in search_paths {
+        if should_emit_search_path(path) {
             println!("cargo:rustc-link-search=native={path}");
         }
     }
+}
+
+fn should_emit_search_path(path: &str) -> bool {
+    !(path.contains("-libiconv-") && !path.contains("-static-"))
 }
 
 fn emit_cpp_runtime() {

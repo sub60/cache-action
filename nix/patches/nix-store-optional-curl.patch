@@ -1,4 +1,5 @@
 diff --git a/src/libstore/filetransfer.cc b/src/libstore/filetransfer.cc
+index 099f436ae..41a06fdea 100644
 --- a/src/libstore/filetransfer.cc
 +++ b/src/libstore/filetransfer.cc
 @@ -20,7 +20,9 @@
@@ -11,19 +12,21 @@ diff --git a/src/libstore/filetransfer.cc b/src/libstore/filetransfer.cc
  
  #include <cmath>
  #include <cstring>
-@@ -53,6 +55,7 @@ FileTransferSettings::FileTransferSettings()
- FileTransferSettings fileTransferSettings;
+@@ -54,6 +56,8 @@ FileTransferSettings fileTransferSettings;
  
  static GlobalConfig::Register rFileTransferSettings(&fileTransferSettings);
-+#if NIX_WITH_CURL_HTTP
  
++#if NIX_WITH_CURL_HTTP
++
  namespace {
  
-@@ -1056,6 +1059,38 @@ ref<FileTransfer> makeFileTransfer(const FileTransferSettings & settings)
- {
+ using curlSList = std::unique_ptr<::curl_slist, decltype([](::curl_slist * list) { ::curl_slist_free_all(list); })>;
+@@ -1057,6 +1061,41 @@ ref<FileTransfer> makeFileTransfer(const FileTransferSettings & settings)
      return makeCurlFileTransfer(settings);
  }
+ 
 +#else
++
 +namespace {
 +
 +struct DisabledFileTransfer final : FileTransfer
@@ -54,14 +57,17 @@ diff --git a/src/libstore/filetransfer.cc b/src/libstore/filetransfer.cc
 +{
 +    return make_ref<DisabledFileTransfer>();
 +}
++
 +#endif
- 
++
  void FileTransferRequest::setupForS3()
  {
+     auto parsedS3 = ParsedS3URL::parse(uri.parsed());
 diff --git a/src/libstore/globals.cc b/src/libstore/globals.cc
+index 2e262aec8..0b8f3ea11 100644
 --- a/src/libstore/globals.cc
 +++ b/src/libstore/globals.cc
-@@ -17,5 +17,9 @@
+@@ -17,7 +17,11 @@
  #include <mutex>
  #include <thread>
  
@@ -71,15 +77,32 @@ diff --git a/src/libstore/globals.cc b/src/libstore/globals.cc
  #include <curl/curl.h>
 +#endif
  #include <nlohmann/json.hpp>
-@@ -605,2 +605,4 @@
+ 
+ #ifndef _WIN32
+@@ -44,8 +48,6 @@
+ #  include "nix/util/windows-known-folders.hh"
+ #endif
+ 
+-#include "store-config-private.hh"
+-
+ namespace nix {
+ 
+ /* The default location of the daemon socket, relative to nixStateDir.
+@@ -603,7 +605,9 @@ void initLibStore(bool loadConfig)
+        [1]
+        https://github.com/apple-oss-distributions/objc4/blob/01edf1705fbc3ff78a423cd21e03dfc21eb4d780/runtime/objc-initialize.mm#L614-L636
      */
 +#if NIX_WITH_CURL_HTTP
      curl_global_init(CURL_GLOBAL_ALL);
 +#endif
+ #ifdef __APPLE__
+     /* On macOS, don't use the per-session TMPDIR (as set e.g. by
+        sshd). This breaks build users because they don't have access
 diff --git a/src/libstore/meson.build b/src/libstore/meson.build
+index 9e52517d4..1e414f437 100644
 --- a/src/libstore/meson.build
 +++ b/src/libstore/meson.build
-@@ -118,8 +118,13 @@ deps_other += boost
+@@ -118,9 +118,14 @@ deps_other += boost
  # This is quite new, but curl has a bunch of known issues with write pausing and decompression.
  # Please use libcurl >= 8.17. See https://github.com/curl/curl/issues/19334, https://github.com/curl/curl/issues/16280, https://github.com/curl/curl/issues/16955 if in doubt.
  # Patch out this check at your own risk.
@@ -96,10 +119,79 @@ diff --git a/src/libstore/meson.build b/src/libstore/meson.build
  
  # seccomp only makes sense on Linux
  is_linux = host_machine.system() == 'linux'
+@@ -268,7 +273,6 @@ config_priv_h = configure_file(
+ subdir('nix-meson-build-support/common')
+ 
+ sources = files(
+-  'binary-cache-store.cc',
+   'build-result.cc',
+   'build/build-log.cc',
+   'build/derivation-builder.cc',
+@@ -284,10 +288,8 @@ sources = files(
+   'build/substitution-goal.cc',
+   'build/worker.cc',
+   'builtins/buildenv.cc',
+-  'builtins/fetchurl.cc',
+   'builtins/unpack-channel.cc',
+   'common-protocol.cc',
+-  'common-ssh-store-config.cc',
+   'content-address.cc',
+   'daemon.cc',
+   'derivation-options.cc',
+@@ -300,11 +302,8 @@ sources = files(
+   'filetransfer.cc',
+   'gc.cc',
+   'globals.cc',
+-  'http-binary-cache-store.cc',
+   'indirect-root-store.cc',
+   'keys.cc',
+-  'legacy-ssh-store.cc',
+-  'local-binary-cache-store.cc',
+   'local-fs-store.cc',
+   'local-gc.cc',
+   'local-overlay-store.cc',
+@@ -331,13 +330,8 @@ sources = files(
+   'remote-fs-accessor.cc',
+   'remote-store.cc',
+   'restricted-store.cc',
+-  's3-binary-cache-store.cc',
+   's3-url.cc',
+-  'serve-protocol-connection.cc',
+-  'serve-protocol.cc',
+   'sqlite.cc',
+-  'ssh-store.cc',
+-  'ssh.cc',
+   'store-api.cc',
+   'store-dir-config.cc',
+   'store-reference.cc',
+@@ -347,6 +341,22 @@ sources = files(
+   'worker-protocol.cc',
+ )
+ 
++if get_option('extra-store-implementations')
++  sources += files(
++    'binary-cache-store.cc',
++    'builtins/fetchurl.cc',
++    'common-ssh-store-config.cc',
++    'http-binary-cache-store.cc',
++    'legacy-ssh-store.cc',
++    'local-binary-cache-store.cc',
++    's3-binary-cache-store.cc',
++    'serve-protocol-connection.cc',
++    'serve-protocol.cc',
++    'ssh-store.cc',
++    'ssh.cc',
++  )
++endif
++
+ # AWS credentials code requires AWS CRT, so only compile when enabled
+ if s3_aws_auth.enabled()
+   sources += files('aws-creds.cc')
 diff --git a/src/libstore/meson.options b/src/libstore/meson.options
+index c822133df..3ca112004 100644
 --- a/src/libstore/meson.options
 +++ b/src/libstore/meson.options
-@@ -1,8 +1,15 @@
+@@ -1,5 +1,19 @@
  # vim: filetype=meson
  
 +option(
@@ -109,9 +201,13 @@ diff --git a/src/libstore/meson.options b/src/libstore/meson.options
 +  description : 'build support for HTTP-based file transfer and binary caches',
 +)
 +
++option(
++  'extra-store-implementations',
++  type : 'boolean',
++  value : true,
++  description : 'build SSH, serve-protocol, and binary-cache store implementations',
++)
++
  option(
    'embedded-sandbox-shell',
    type : 'boolean',
-   value : false,
-   description : 'include the sandbox shell in the Nix binary',
- )
