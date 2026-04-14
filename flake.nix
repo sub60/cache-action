@@ -48,9 +48,21 @@
               ./nix/patches/nix-store-optional-curl.patch
             ]).overrideScope
               (
-                _final: prev: {
+                final: prev: {
+                  nix-util = (prev.nix-util).overrideAttrs (old: {
+                    propagatedBuildInputs = pkgs.lib.filter (
+                      pkg: (pkg.pname or "") != "libarchive"
+                    ) old.propagatedBuildInputs;
+                    mesonFlags = old.mesonFlags ++ [
+                      (pkgs.lib.mesonBool "archive-support" false)
+                    ];
+                  });
+                  nix-util-c = prev.nix-util-c.override {
+                    nix-util = final.nix-util;
+                  };
                   nix-store =
                     (prev.nix-store.override {
+                      nix-util = final.nix-util;
                       # nixpkgs currently enables the embedded sandbox shell for all
                       # static builds, but only wires the busybox sandbox shell path
                       # on Linux. Disable the embedded shell on non-Linux targets so
@@ -68,6 +80,10 @@
                           (pkgs.lib.mesonBool "extra-store-implementations" false)
                         ];
                       });
+                  nix-store-c = prev.nix-store-c.override {
+                    nix-util-c = final.nix-util-c;
+                    nix-store = final.nix-store;
+                  };
                 }
               );
         in
