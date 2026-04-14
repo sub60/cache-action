@@ -55,6 +55,8 @@ impl context::Nix for NixCli {
         &self,
         store_path: &NixStorePath<StoreDir>,
     ) -> Result<Vec<NixStorePath<StoreDir>>, Self::Error> {
+        let err = nixb_store::init(None);
+        println!("nixb_store::init: {err:?}");
         Ok(vec![store_path.clone()])
     }
 }
