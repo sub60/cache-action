@@ -44,10 +44,31 @@
       mkNixbStoreBuildInputs =
         pkgs:
         let
+          nixSource = pkgs.fetchFromGitHub {
+            owner = "NixOS";
+            repo = "nix";
+            rev = "9d718847a1b97cc8476cb23c207cacf91ba136ed";
+            sha256 = "11cnvlsfv1wimhljdb5483kfd3gg3vijixf38lzssh4l3c3h7z2l";
+          };
+
           components =
-            (pkgs.pkgsStatic.nixVersions.nixComponents_2_34.appendPatches [
-              ./nix/patches/nix-store-optional-curl.patch
-            ]).overrideScope
+            (
+              (pkgs.pkgsStatic.nixDependencies.callPackage
+                "${nixpkgs}/pkgs/tools/package-management/nix/modular/packages.nix"
+                {
+                  teams = [ ];
+                  otherSplices = pkgs.pkgsStatic.generateSplicesForMkScope [
+                    "nixVersions"
+                    "nixComponents_git"
+                  ];
+                  src = nixSource;
+                  version = "2.35.0";
+                }
+              ).appendPatches
+              [
+                ./nix/patches/nix-store-optional-curl.patch
+              ]
+            ).overrideScope
               (
                 final: prev: {
                   nix-util = (prev.nix-util).overrideAttrs (old: {
@@ -100,7 +121,6 @@
         pkgs:
         let
           craneLib = mkCraneLib pkgs;
-          nixbStoreBuildInputs = mkNixbStoreBuildInputs pkgs;
           src = craneLib.cleanCargoSource ./.;
           commonArgs = {
             inherit src;
@@ -110,7 +130,7 @@
             CARGO_NET_GIT_FETCH_WITH_CLI = "true";
             PKG_CONFIG_ALL_STATIC = "1";
             nativeBuildInputs = [ pkgs.buildPackages.pkg-config ];
-            buildInputs = nixbStoreBuildInputs;
+            buildInputs = mkNixbStoreBuildInputs pkgs;
           };
           cargoArtifacts = craneLib.buildDepsOnly commonArgs;
         in
