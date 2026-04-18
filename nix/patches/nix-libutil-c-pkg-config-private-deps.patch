@@ -1,0 +1,31 @@
+# Keep `nix-util` out of the public `Requires` field in `nix-util-c.pc`.
+# Static C consumers should only see the C API surface and pick up the C++
+# implementation library through `Requires.private`.
+
+diff --git a/src/libutil-c/meson.build b/src/libutil-c/meson.build
+--- a/src/libutil-c/meson.build
++++ b/src/libutil-c/meson.build
+@@ -64,5 +64,24 @@ install_headers(headers, preserve_path : true)
+
+ libraries_private = []
+
++if host_machine.system() != 'windows'
++  meson.add_install_script('sh', '-c', '''
++    pc="$MESON_INSTALL_DESTDIR_PREFIX/@0@"
++    tmp="$pc.tmp"
++    : > "$tmp"
++    while IFS= read -r line; do
++      case "$line" in
++        'Requires: nix-util')
++          printf '%s\n' 'Requires.private: nix-util' >> "$tmp"
++          ;;
++        *)
++          printf '%s\n' "$line" >> "$tmp"
++          ;;
++      esac
++    done < "$pc"
++    mv "$tmp" "$pc"
++  '''.format(get_option('libdir') / 'pkgconfig' / 'nix-util-c.pc'))
++endif
++
+ subdir('nix-meson-build-support/export')

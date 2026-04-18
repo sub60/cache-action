@@ -1,0 +1,23 @@
+# Fix the static `nix-store.pc` export so it stops referring to a shared
+# `libboost_container` path and includes `boost_regex` in the static link
+# closure.
+
+diff --git a/src/libstore/meson.build b/src/libstore/meson.build
+--- a/src/libstore/meson.build
++++ b/src/libstore/meson.build
+@@ -395,6 +395,15 @@ this_library = library(
+ install_headers(headers, subdir : 'nix/store', preserve_path : true)
+
+ libraries_private = []
++if host_machine.system() != 'windows'
++  meson.add_install_script('sh', '-c', '''
++    pc="$MESON_INSTALL_DESTDIR_PREFIX/@0@"
++    tmp="$pc.tmp"
++    sed 's|\([^ ]*/\)libboost_container[^ ]*| -L\1 -lboost_container|g; s|-DBOOST_CONTAINER_DYN_LINK=1 ||g' "$pc" > "$tmp"
++    printf '%s\n' 'Libs.private: -lboost_regex' >> "$tmp"
++    mv "$tmp" "$pc"
++  '''.format(get_option('libdir') / 'pkgconfig' / 'nix-store.pc'))
++endif
+
+ extra_pkg_config_variables = {
+   'storedir' : get_option('store-dir'),

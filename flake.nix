@@ -68,6 +68,14 @@
               ).appendPatches
               [
                 ./nix/patches/nix-store-optional-curl.patch
+                # Keep the C API pkg-config files from exposing internal C++
+                # libraries as public link dependencies.
+                ./nix/patches/nix-libutil-c-pkg-config-private-deps.patch
+                ./nix/patches/nix-libstore-c-pkg-config-private-deps.patch
+                # Fix static pkg-config metadata so downstream consumers link
+                # Boost and the C++ runtime correctly.
+                ./nix/patches/nix-libutil-pkg-config-static-libs.patch
+                ./nix/patches/nix-libstore-pkg-config-static-libs.patch
               ]
             ).overrideScope
               (
@@ -80,9 +88,11 @@
                       (pkgs.lib.mesonBool "archive-support" false)
                     ];
                   });
-                  nix-util-c = prev.nix-util-c.override {
-                    nix-util = final.nix-util;
-                  };
+                  nix-util-c = (
+                    prev.nix-util-c.override {
+                      nix-util = final.nix-util;
+                    }
+                  );
                   nix-store =
                     (prev.nix-store.override {
                       nix-util = final.nix-util;
@@ -103,10 +113,12 @@
                           (pkgs.lib.mesonBool "extra-store-implementations" false)
                         ];
                       });
-                  nix-store-c = prev.nix-store-c.override {
-                    nix-util-c = final.nix-util-c;
-                    nix-store = final.nix-store;
-                  };
+                  nix-store-c = (
+                    prev.nix-store-c.override {
+                      nix-util-c = final.nix-util-c;
+                      nix-store = final.nix-store;
+                    }
+                  );
                 }
               );
         in
@@ -116,6 +128,41 @@
           components.nix-store.dev
           components.nix-store-c.dev
         ];
+
+      # Darwin's wrapped toolchain still injects the shared libiconv search
+      # path via NIX_LDFLAGS. Rewrite those flags so `-liconv` resolves to the
+      # static archive in both the dev shell and packaged builds.
+      mkStaticLinkEnvHook =
+        pkgs:
+        pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isDarwin ''
+          rewrite_iconv_flags() {
+            local var_name=$1
+            local value="''${!var_name:-}"
+            local rewritten=
+
+            for flag in $value; do
+              case "$flag" in
+                -liconv)
+                  flag='${pkgs.pkgsStatic.libiconv.dev}/lib/libiconv.a'
+                  ;;
+                -L*-libiconv-*)
+                  case "$flag" in
+                    *-static-*) ;;
+                    *) continue ;;
+                  esac
+                  ;;
+              esac
+
+              rewritten="$rewritten $flag"
+            done
+
+            printf -v "$var_name" '%s' "''${rewritten# }"
+            export "$var_name"
+          }
+
+          rewrite_iconv_flags NIX_LDFLAGS
+          rewrite_iconv_flags NIX_LDFLAGS_FOR_BUILD
+        '';
 
       mkPackage =
         pkgs:
@@ -129,6 +176,7 @@
             doCheck = false;
             buildInputs = mkBuildInputs pkgs;
             nativeBuildInputs = [ pkgs.buildPackages.pkg-config ];
+            preBuild = mkStaticLinkEnvHook pkgs;
             env = {
               CARGO_NET_GIT_FETCH_WITH_CLI = "true";
               PKG_CONFIG_ALL_STATIC = "1";
@@ -215,6 +263,7 @@
               pkgs.nodejs
               pkgs.typescript-language-server
             ];
+            shellHook = mkStaticLinkEnvHook pkgs;
             env.PKG_CONFIG_ALL_STATIC = "1";
           };
         }
