@@ -32,8 +32,9 @@
 
       mkToolchain =
         pkgs:
-        ((rust-overlay.lib.mkRustBin { } pkgs.buildPackages).fromRustupToolchainFile ./rust-toolchain.toml)
-        .override
+        ((rust-overlay.lib.mkRustBin { } pkgs.buildPackages).fromRustupToolchainFile
+          ./rust-toolchain.toml
+        ).override
           {
             targets = [ pkgs.stdenv.targetPlatform.rust.rustcTarget ];
           };
@@ -89,7 +90,8 @@
                       # all static builds, but only wires the busybox sandbox
                       # shell path on Linux. Disable the embedded shell on
                       # non-Linux targets so the static package still builds.
-                      embeddedSandboxShell = pkgs.stdenv.hostPlatform.isLinux && pkgs.stdenv.hostPlatform.isStatic;
+                      embeddedSandboxShell =
+                        pkgs.stdenv.hostPlatform.isLinux && pkgs.stdenv.hostPlatform.isStatic;
                       # We don't need authenticated S3 fetcher support, so let's
                       # disable it to make the release binary smaller.
                       withAWS = false;
@@ -218,7 +220,9 @@
         }
       );
 
-      formatter = forEachSystem (_system: pkgs: (mkTreefmt pkgs).config.build.wrapper);
+      formatter = forEachSystem (
+        _system: pkgs: (mkTreefmt pkgs).config.build.wrapper
+      );
 
       checks = forEachSystem (
         _system: pkgs: {
