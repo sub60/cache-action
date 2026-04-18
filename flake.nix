@@ -32,18 +32,18 @@
 
       mkToolchain =
         pkgs:
-        ((rust-overlay.lib.mkRustBin { } pkgs.buildPackages).fromRustupToolchainFile
-          ./rust-toolchain.toml
-        ).override
+        ((rust-overlay.lib.mkRustBin { } pkgs.buildPackages).fromRustupToolchainFile ./rust-toolchain.toml)
+        .override
           {
             targets = [ pkgs.stdenv.targetPlatform.rust.rustcTarget ];
           };
 
       mkCraneLib = pkgs: (crane.mkLib pkgs).overrideToolchain mkToolchain;
 
-      mkNixbStoreBuildInputs =
+      mkBuildInputs =
         pkgs:
         let
+          # HEAD of https://github.com/NixOS/nix/pull/15675
           nixSource = pkgs.fetchFromGitHub {
             owner = "NixOS";
             repo = "nix";
@@ -56,13 +56,13 @@
               (pkgs.pkgsStatic.nixDependencies.callPackage
                 "${nixpkgs}/pkgs/tools/package-management/nix/modular/packages.nix"
                 {
-                  teams = [ ];
+                  src = nixSource;
+                  version = "2.35.0";
                   otherSplices = pkgs.pkgsStatic.generateSplicesForMkScope [
                     "nixVersions"
                     "nixComponents_git"
                   ];
-                  src = nixSource;
-                  version = "2.35.0";
+                  teams = [ ];
                 }
               ).appendPatches
               [
@@ -85,15 +85,13 @@
                   nix-store =
                     (prev.nix-store.override {
                       nix-util = final.nix-util;
-                      # nixpkgs currently enables the embedded sandbox shell for all
-                      # static builds, but only wires the busybox sandbox shell path
-                      # on Linux. Disable the embedded shell on non-Linux targets so
-                      # the static package still builds.
-                      embeddedSandboxShell =
-                        pkgs.stdenv.hostPlatform.isLinux && pkgs.stdenv.hostPlatform.isStatic;
-                      # Local libstore use does not need authenticated S3 fetcher
-                      # support, and disabling it keeps the static link closure
-                      # smaller.
+                      # nixpkgs currently enables the embedded sandbox shell for
+                      # all static builds, but only wires the busybox sandbox
+                      # shell path on Linux. Disable the embedded shell on
+                      # non-Linux targets so the static package still builds.
+                      embeddedSandboxShell = pkgs.stdenv.hostPlatform.isLinux && pkgs.stdenv.hostPlatform.isStatic;
+                      # We don't need authenticated S3 fetcher support, so let's
+                      # disable it to make the release binary smaller.
                       withAWS = false;
                     }).overrideAttrs
                       (old: {
@@ -127,10 +125,12 @@
             cargoVendorDir = craneLib.vendorCargoDeps { inherit src; };
             strictDeps = true;
             doCheck = false;
-            CARGO_NET_GIT_FETCH_WITH_CLI = "true";
-            PKG_CONFIG_ALL_STATIC = "1";
+            buildInputs = mkBuildInputs pkgs;
             nativeBuildInputs = [ pkgs.buildPackages.pkg-config ];
-            buildInputs = mkNixbStoreBuildInputs pkgs;
+            env = {
+              CARGO_NET_GIT_FETCH_WITH_CLI = "true";
+              PKG_CONFIG_ALL_STATIC = "1";
+            };
           };
           cargoArtifacts = craneLib.buildDepsOnly commonArgs;
         in
@@ -196,14 +196,9 @@
       );
 
       devShells = forEachSystem (
-        _system: pkgs:
-        let
-          nixbStoreBuildInputs = mkNixbStoreBuildInputs pkgs;
-        in
-        {
+        _system: pkgs: {
           default = pkgs.mkShell {
-            PKG_CONFIG_ALL_STATIC = "1";
-            buildInputs = nixbStoreBuildInputs;
+            buildInputs = mkBuildInputs pkgs;
             nativeBuildInputs = [
               ((mkToolchain pkgs).override {
                 extensions = [
@@ -218,13 +213,12 @@
               pkgs.nodejs
               pkgs.typescript-language-server
             ];
+            env.PKG_CONFIG_ALL_STATIC = "1";
           };
         }
       );
 
-      formatter = forEachSystem (
-        _system: pkgs: (mkTreefmt pkgs).config.build.wrapper
-      );
+      formatter = forEachSystem (_system: pkgs: (mkTreefmt pkgs).config.build.wrapper);
 
       checks = forEachSystem (
         _system: pkgs: {
