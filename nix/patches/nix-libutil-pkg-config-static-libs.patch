@@ -1,0 +1,24 @@
+# Add the Boost URL and coroutine-context libraries plus the C++ runtime that
+# static consumers of `nix-util` need, but which Meson's pkg-config generator
+# does not emit.
+
+diff --git a/src/libutil/meson.build b/src/libutil/meson.build
+--- a/src/libutil/meson.build
++++ b/src/libutil/meson.build
+@@ -227,10 +227,16 @@ this_library = library(
+ install_headers(headers, subdir : 'nix/util', preserve_path : true)
+
+ libraries_private = []
+ if host_machine.system() == 'windows'
+   # `libraries_private` cannot contain ad-hoc dependencies (from
+   # `find_library), so we need to do this manually
+   libraries_private += [ '-lws2_32' ]
++else
++  cxx_runtime = host_machine.system() == 'darwin' ? '-lc++' : '-lstdc++'
++  meson.add_install_script('sh', '-c', '''
++    pc="$MESON_INSTALL_DESTDIR_PREFIX/@0@"
++    printf '%s\n' 'Libs.private: -lboost_context -lboost_url @1@' >> "$pc"
++  '''.format(get_option('libdir') / 'pkgconfig' / 'nix-util.pc', cxx_runtime))
+ endif
+
+ subdir('nix-meson-build-support/export')

@@ -1,0 +1,454 @@
+# Make libcurl-backed HTTP support and the extra remote store implementations
+# optional in `libstore` so that we can disable them.
+
+diff --git a/src/libstore/filetransfer.cc b/src/libstore/filetransfer.cc
+index 099f436ae..41a06fdea 100644
+--- a/src/libstore/filetransfer.cc
++++ b/src/libstore/filetransfer.cc
+@@ -20,7 +20,9 @@
+ #include <unistd.h>
+ #include <fcntl.h>
+
++#if NIX_WITH_CURL_HTTP
+ #include <curl/curl.h>
++#endif
+
+ #include <cmath>
+ #include <cstring>
+@@ -54,6 +56,8 @@ FileTransferSettings fileTransferSettings;
+
+ static GlobalConfig::Register rFileTransferSettings(&fileTransferSettings);
+
++#if NIX_WITH_CURL_HTTP
++
+ namespace {
+
+ using curlSList = std::unique_ptr<::curl_slist, decltype([](::curl_slist * list) { ::curl_slist_free_all(list); })>;
+@@ -1057,6 +1061,41 @@ ref<FileTransfer> makeFileTransfer(const FileTransferSettings & settings)
+     return makeCurlFileTransfer(settings);
+ }
+
++#else
++
++namespace {
++
++struct DisabledFileTransfer final : FileTransfer
++{
++    struct DisabledItem final : Item {} item;
++
++    ItemHandle enqueueFileTransfer(const FileTransferRequest &, Callback<FileTransferResult> callback) override
++    {
++        callback.rethrow(std::make_exception_ptr(FileTransferError(
++            FileTransfer::Misc,
++            std::nullopt,
++            "this Nix build was compiled without HTTP file transfer support")));
++        return ItemHandle(item);
++    }
++
++    void unpauseTransfer(ItemHandle) override {}
++};
++
++} // namespace
++
++ref<FileTransfer> getFileTransfer()
++{
++    static ref<DisabledFileTransfer> fileTransfer = make_ref<DisabledFileTransfer>();
++    return fileTransfer;
++}
++
++ref<FileTransfer> makeFileTransfer(const FileTransferSettings &)
++{
++    return make_ref<DisabledFileTransfer>();
++}
++
++#endif
++
+ void FileTransferRequest::setupForS3()
+ {
+     auto parsedS3 = ParsedS3URL::parse(uri.parsed());
+diff --git a/src/libstore/globals.cc b/src/libstore/globals.cc
+index 2e262aec8..0b8f3ea11 100644
+--- a/src/libstore/globals.cc
++++ b/src/libstore/globals.cc
+@@ -17,7 +17,11 @@
+ #include <mutex>
+ #include <thread>
+
++#include "store-config-private.hh"
++
++#if NIX_WITH_CURL_HTTP
+ #include <curl/curl.h>
++#endif
+ #include <nlohmann/json.hpp>
+
+ #ifndef _WIN32
+@@ -44,8 +48,6 @@
+ #  include "nix/util/windows-known-folders.hh"
+ #endif
+
+-#include "store-config-private.hh"
+-
+ namespace nix {
+
+ /* The default location of the daemon socket, relative to nixStateDir.
+@@ -603,7 +605,9 @@ void initLibStore(bool loadConfig)
+        [1]
+        https://github.com/apple-oss-distributions/objc4/blob/01edf1705fbc3ff78a423cd21e03dfc21eb4d780/runtime/objc-initialize.mm#L614-L636
+     */
++#if NIX_WITH_CURL_HTTP
+     curl_global_init(CURL_GLOBAL_ALL);
++#endif
+ #ifdef __APPLE__
+     /* On macOS, don't use the per-session TMPDIR (as set e.g. by
+        sshd). This breaks build users because they don't have access
+diff --git a/src/libstore/meson.build b/src/libstore/meson.build
+index 9e52517d4..1e414f437 100644
+--- a/src/libstore/meson.build
++++ b/src/libstore/meson.build
+@@ -118,9 +118,14 @@ deps_other += boost
+ # This is quite new, but curl has a bunch of known issues with write pausing and decompression.
+ # Please use libcurl >= 8.17. See https://github.com/curl/curl/issues/19334, https://github.com/curl/curl/issues/16280, https://github.com/curl/curl/issues/16955 if in doubt.
+ # Patch out this check at your own risk.
+-curl = dependency('libcurl', 'curl', version : '>= 8.17.0')
++http_client = get_option('http-client')
+
+-deps_private += curl
++if http_client
++  curl = dependency('libcurl', 'curl', version : '>= 8.17.0')
++  deps_private += curl
++endif
++
++configdata_priv.set('NIX_WITH_CURL_HTTP', http_client.to_int())
+
+ # seccomp only makes sense on Linux
+ is_linux = host_machine.system() == 'linux'
+@@ -268,7 +273,6 @@ config_priv_h = configure_file(
+ subdir('nix-meson-build-support/common')
+
+ sources = files(
+-  'binary-cache-store.cc',
+   'build-result.cc',
+   'build/build-log.cc',
+   'build/derivation-builder.cc',
+@@ -284,10 +288,8 @@ sources = files(
+   'build/substitution-goal.cc',
+   'build/worker.cc',
+   'builtins/buildenv.cc',
+-  'builtins/fetchurl.cc',
+   'builtins/unpack-channel.cc',
+   'common-protocol.cc',
+-  'common-ssh-store-config.cc',
+   'content-address.cc',
+   'daemon.cc',
+   'derivation-options.cc',
+@@ -300,11 +302,8 @@ sources = files(
+   'filetransfer.cc',
+   'gc.cc',
+   'globals.cc',
+-  'http-binary-cache-store.cc',
+   'indirect-root-store.cc',
+   'keys.cc',
+-  'legacy-ssh-store.cc',
+-  'local-binary-cache-store.cc',
+   'local-fs-store.cc',
+   'local-gc.cc',
+   'local-overlay-store.cc',
+@@ -331,13 +330,8 @@ sources = files(
+   'remote-fs-accessor.cc',
+   'remote-store.cc',
+   'restricted-store.cc',
+-  's3-binary-cache-store.cc',
+   's3-url.cc',
+-  'serve-protocol-connection.cc',
+-  'serve-protocol.cc',
+   'sqlite.cc',
+-  'ssh-store.cc',
+-  'ssh.cc',
+   'store-api.cc',
+   'store-dir-config.cc',
+   'store-reference.cc',
+@@ -347,6 +341,22 @@ sources = files(
+   'worker-protocol.cc',
+ )
+
++if get_option('extra-store-implementations')
++  sources += files(
++    'binary-cache-store.cc',
++    'builtins/fetchurl.cc',
++    'common-ssh-store-config.cc',
++    'http-binary-cache-store.cc',
++    'legacy-ssh-store.cc',
++    'local-binary-cache-store.cc',
++    's3-binary-cache-store.cc',
++    'serve-protocol-connection.cc',
++    'serve-protocol.cc',
++    'ssh-store.cc',
++    'ssh.cc',
++  )
++endif
++
+ # AWS credentials code requires AWS CRT, so only compile when enabled
+ if s3_aws_auth.enabled()
+   sources += files('aws-creds.cc')
+diff --git a/src/libstore/meson.options b/src/libstore/meson.options
+index c822133df..3ca112004 100644
+--- a/src/libstore/meson.options
++++ b/src/libstore/meson.options
+@@ -1,5 +1,19 @@
+ # vim: filetype=meson
+
++option(
++  'http-client',
++  type : 'boolean',
++  value : true,
++  description : 'build support for HTTP-based file transfer and binary caches',
++)
++
++option(
++  'extra-store-implementations',
++  type : 'boolean',
++  value : true,
++  description : 'build SSH, serve-protocol, and binary-cache store implementations',
++)
++
+ option(
+   'embedded-sandbox-shell',
+   type : 'boolean',
+diff --git a/src/libutil/compression.cc b/src/libutil/compression.cc
+index 8b55c44a2..e51c2002c 100644
+--- a/src/libutil/compression.cc
++++ b/src/libutil/compression.cc
+@@ -1,11 +1,14 @@
+ #include "nix/util/compression.hh"
++#include "util-config-private.hh"
+ #include "nix/util/signals.hh"
+ #include "nix/util/tarfile.hh"
+ #include "nix/util/finally.hh"
+ #include "nix/util/logging.hh"
+
++#if NIX_WITH_LIBARCHIVE
+ #include <archive.h>
+ #include <archive_entry.h>
++#endif
+ #include <cstdio>
+ #include <cstring>
+
+@@ -34,6 +37,7 @@ struct ChunkedCompressionSink : CompressionSink
+     virtual void writeInternal(std::string_view data) = 0;
+ };
+
++#if NIX_WITH_LIBARCHIVE
+ struct ArchiveDecompressionSource : Source
+ {
+     std::unique_ptr<TarArchive> archive = 0;
+@@ -68,6 +72,7 @@ struct ArchiveDecompressionSource : Source
+         return result;
+     }
+ };
++#endif
+
+ /* Happens to match enum names. */
+ #define NIX_FOR_EACH_LA_ALGO(MACRO) \
+@@ -83,6 +88,7 @@ struct ArchiveDecompressionSource : Source
+     MACRO(xz)                       \
+     MACRO(zstd)
+
++#if NIX_WITH_LIBARCHIVE
+ struct ArchiveCompressionSink : CompressionSink
+ {
+     Sink & nextSink;
+@@ -116,9 +122,7 @@ struct ArchiveCompressionSink : CompressionSink
+             check(archive_write_set_filter_option(archive, format, "threads", "0"));
+         if (level != COMPRESSION_LEVEL_DEFAULT)
+             check(archive_write_set_filter_option(archive, format, "compression-level", std::to_string(level).c_str()));
+-        // disable internal buffering
+         check(archive_write_set_bytes_per_block(archive, 0));
+-        // disable output padding
+         check(archive_write_set_bytes_in_last_block(archive, 1));
+         open();
+     }
+@@ -167,6 +171,7 @@ private:
+         return length;
+     }
+ };
++#endif
+
+ struct NoneSink : CompressionSink
+ {
+@@ -254,11 +259,16 @@ std::unique_ptr<FinishSink> makeDecompressionSink(const std::string & method, Si
+         return std::make_unique<NoneSink>(nextSink);
+     else if (method == "br")
+         return std::make_unique<BrotliDecompressionSink>(nextSink);
++#if NIX_WITH_LIBARCHIVE
+     else
+         return sourceToSink([method, &nextSink](Source & source) {
+             auto decompressionSource = std::make_unique<ArchiveDecompressionSource>(source, method);
+             decompressionSource->drainInto(nextSink);
+         });
++#else
++    else
++        throw CompressionError("compression method '%s' requires archive support", method);
++#endif
+ }
+
+ struct BrotliCompressionSink : ChunkedCompressionSink
+@@ -325,11 +335,20 @@ ref<CompressionSink> makeCompressionSink(CompressionAlgo method, Sink & nextSink
+         return make_ref<NoneSink>(nextSink);
+     case CompressionAlgo::brotli:
+         return make_ref<BrotliCompressionSink>(nextSink);
++#if NIX_WITH_LIBARCHIVE
+         /* Everything else is supported via libarchive. */
+ #define NIX_DEF_LA_ALGO_CASE(algo) case CompressionAlgo::algo:
+         NIX_FOR_EACH_LA_ALGO(NIX_DEF_LA_ALGO_CASE)
+         return make_ref<ArchiveCompressionSink>(nextSink, method, parallel, level);
+ #undef NIX_DEF_LA_ALGO_CASE
++#else
++#define NIX_DEF_LA_ALGO_CASE(algo) case CompressionAlgo::algo:
++        NIX_FOR_EACH_LA_ALGO(NIX_DEF_LA_ALGO_CASE)
++        throw CompressionError(
++            "compression method '%s' requires archive support",
++            showCompressionAlgo(method));
++#undef NIX_DEF_LA_ALGO_CASE
++#endif
+     }
+     unreachable();
+ }
+diff --git a/src/libutil/include/nix/util/tarfile.hh b/src/libutil/include/nix/util/tarfile.hh
+index 324c7c8a8..3294523d0 100644
+--- a/src/libutil/include/nix/util/tarfile.hh
++++ b/src/libutil/include/nix/util/tarfile.hh
+@@ -3,7 +3,8 @@
+
+ #include "nix/util/serialise.hh"
+ #include "nix/util/fs-sink.hh"
+-#include <archive.h>
++
++struct archive;
+
+ namespace nix {
+
+diff --git a/src/libutil/meson.build b/src/libutil/meson.build
+index 71bea971d..ce426ee37 100644
+--- a/src/libutil/meson.build
++++ b/src/libutil/meson.build
+@@ -62,6 +62,9 @@ blake3 = dependency(
+ )
+ deps_private += blake3
+
++archive_support = get_option('archive-support')
++configdata_priv.set('NIX_WITH_LIBARCHIVE', archive_support.to_int())
++
+ boost = dependency(
+   'boost',
+   modules : [
+@@ -84,9 +87,11 @@ openssl = dependency(
+ )
+ deps_private += openssl
+
+-libarchive = dependency('libarchive', version : '>= 3.1.2')
+-deps_public += libarchive
+-if get_option('default_library') == 'static'
++if archive_support
++  libarchive = dependency('libarchive', version : '>= 3.1.2')
++  deps_public += libarchive
++endif
++if archive_support and get_option('default_library') == 'static'
+   # Workaround until https://github.com/libarchive/libarchive/issues/1446 is fixed
+   add_project_arguments('-lz', language : 'cpp')
+ endif
+diff --git a/src/libutil/meson.options b/src/libutil/meson.options
+index a82806162..a8ce3eb52 100644
+--- a/src/libutil/meson.options
++++ b/src/libutil/meson.options
+@@ -1,5 +1,12 @@
+ # vim: filetype=meson
+
++option(
++  'archive-support',
++  type : 'boolean',
++  value : true,
++  description : 'build support for tar archives and libarchive-backed compression methods',
++)
++
+ option(
+   'cpuid',
+   type : 'feature',
+diff --git a/src/libutil/tarfile.cc b/src/libutil/tarfile.cc
+index eea037663..4fb9ae176 100644
+--- a/src/libutil/tarfile.cc
++++ b/src/libutil/tarfile.cc
+@@ -1,5 +1,9 @@
++#include "util-config-private.hh"
++
++#if NIX_WITH_LIBARCHIVE
+ #include <archive.h>
+ #include <archive_entry.h>
++#endif
+
+ #include "nix/util/finally.hh"
+ #include "nix/util/serialise.hh"
+@@ -8,6 +12,8 @@
+
+ namespace nix {
+
++#if NIX_WITH_LIBARCHIVE
++
+ namespace {
+
+ int callback_open(struct archive *, void * self)
+@@ -239,4 +245,55 @@ time_t unpackTarfileToSink(TarArchive & archive, ExtendedFileSystemObjectSink &
+     return lastModified;
+ }
+
++#else
++
++namespace {
++
++[[noreturn]] static void archiveSupportDisabled()
++{
++    throw Error("this Nix build was compiled without archive support");
++}
++
++} // namespace
++
++void TarArchive::check(int, const std::string &)
++{
++    archiveSupportDisabled();
++}
++
++TarArchive::TarArchive(const std::filesystem::path &)
++    : archive(nullptr)
++    , source(nullptr)
++{
++    archiveSupportDisabled();
++}
++
++TarArchive::TarArchive(Source & source, bool, std::optional<std::string>)
++    : archive(nullptr)
++    , source(&source)
++{
++    archiveSupportDisabled();
++}
++
++void TarArchive::close() {}
++
++TarArchive::~TarArchive() = default;
++
++int getArchiveFilterCodeByName(const std::string &)
++{
++    archiveSupportDisabled();
++}
++
++void unpackTarfile(const std::filesystem::path &, const std::filesystem::path &)
++{
++    archiveSupportDisabled();
++}
++
++time_t unpackTarfileToSink(TarArchive &, ExtendedFileSystemObjectSink &)
++{
++    archiveSupportDisabled();
++}
++
++#endif
++
+ } // namespace nix
