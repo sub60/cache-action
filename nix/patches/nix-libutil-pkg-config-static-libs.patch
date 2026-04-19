@@ -1,6 +1,6 @@
-# Add the Boost URL and coroutine-context libraries, plus the C++ runtime,
-# that static consumers of `nix-util` need, but which Meson's pkg-config
-# generator does not emit.
+# Add the Boost URL and coroutine-context libraries plus the C++ runtime that
+# static consumers of `nix-util` need, but which Meson's pkg-config generator
+# does not emit.
 
 diff --git a/src/libutil/meson.build b/src/libutil/meson.build
 --- a/src/libutil/meson.build

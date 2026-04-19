@@ -1,5 +1,5 @@
-# Drop the spurious Boost container dylib path from the static
-# `nix-store.pc` export.
+# Drop the spurious Boost container dylib path that Meson's pkg-config
+# generator emits in the static `nix-store.pc` export.
 
 diff --git a/src/libstore/meson.build b/src/libstore/meson.build
 --- a/src/libstore/meson.build
