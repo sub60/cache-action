@@ -107,6 +107,9 @@
                       withAWS = false;
                     }).overrideAttrs
                       (old: {
+                        propagatedBuildInputs = pkgs.lib.filter (
+                          pkg: (pkg.pname or "") != "curl"
+                        ) old.propagatedBuildInputs;
                         buildInputs = pkgs.lib.remove prev.curl old.buildInputs;
                         mesonFlags = old.mesonFlags ++ [
                           (pkgs.lib.mesonBool "http-client" false)

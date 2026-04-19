@@ -1,5 +1,6 @@
-# Add the compiled Boost libraries and C++ runtime that static consumers of
-# `nix-util` need, but which Meson's pkg-config generator does not emit.
+# Add the Boost URL and coroutine-context libraries, plus the C++ runtime,
+# that static consumers of `nix-util` need, but which Meson's pkg-config
+# generator does not emit.
 
 diff --git a/src/libutil/meson.build b/src/libutil/meson.build
 --- a/src/libutil/meson.build
@@ -16,7 +17,7 @@ diff --git a/src/libutil/meson.build b/src/libutil/meson.build
 +  cxx_runtime = host_machine.system() == 'darwin' ? '-lc++' : '-lstdc++'
 +  meson.add_install_script('sh', '-c', '''
 +    pc="$MESON_INSTALL_DESTDIR_PREFIX/@0@"
-+    printf '%s\n' 'Libs.private: -lboost_context -lboost_iostreams -lboost_url @1@' >> "$pc"
++    printf '%s\n' 'Libs.private: -lboost_context -lboost_url @1@' >> "$pc"
 +  '''.format(get_option('libdir') / 'pkgconfig' / 'nix-util.pc', cxx_runtime))
  endif
 
