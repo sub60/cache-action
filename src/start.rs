@@ -14,6 +14,7 @@ use nix::unistd;
 use nix_types::{CacheName, UserName};
 use tokio::net::{UnixListener as TokioUnixListener, UnixStream};
 
+use crate::nix_store::NixStore;
 use crate::real_context::RealContext;
 use crate::tokio::Tokio;
 use crate::{AuthToken, event_loop};
@@ -28,6 +29,8 @@ pub struct StartArgs {
     cache: CacheName,
     #[arg(long)]
     auth_token: AuthToken,
+    #[arg(long, default_value_os_t = PathBuf::from("/nix/store"))]
+    store: PathBuf,
 }
 
 enum StartError {
@@ -38,6 +41,7 @@ enum StartError {
     CreatePipe(nix::Error),
     DaemonDidntStart,
     ForkProcess(nix::Error),
+    OpenNixStore(nixb::Error),
 }
 
 /// A [`Stream`] of accepted connections from a [`TokioUnixListener`].
@@ -65,6 +69,9 @@ fn start_inner(args: StartArgs) -> Result<(), StartError> {
 
     let std_listener =
         StdUnixListener::bind(&args.socket).map_err(StartError::BindSocket)?;
+
+    let nix_store =
+        NixStore::open(&args.store).map_err(StartError::OpenNixStore)?;
 
     // Create a pipe for the daemon process to signal readiness.
     let (read_fd, write_fd) = unistd::pipe().map_err(StartError::CreatePipe)?;
@@ -102,7 +109,7 @@ fn start_inner(args: StartArgs) -> Result<(), StartError> {
 
             let tokio = Tokio::new();
 
-            let mut context = RealContext::new(tokio.spawner());
+            let mut context = RealContext::new(nix_store, tokio.spawner());
 
             tokio.block_on(async {
                 std_listener
@@ -189,6 +196,9 @@ impl fmt::Display for StartError {
             },
             Self::ForkProcess(error) => {
                 write!(f, "Couldn't fork process: {error}")
+            },
+            Self::OpenNixStore(error) => {
+                write!(f, "Couldn't open Nix store: {error}")
             },
         }
     }

@@ -1,17 +1,18 @@
 use futures::AsyncWrite;
 
-use crate::nix_cli::NixCli;
+use crate::nix_store::NixStore;
 use crate::real_drain_progress_reporter::RealDrainProgressReporter;
 use crate::tokio::TokioSpawner;
 use crate::{context, protocol};
 
 pub(crate) struct RealContext {
+    nix_store: NixStore,
     spawner: TokioSpawner,
 }
 
 impl RealContext {
-    pub(crate) fn new(spawner: TokioSpawner) -> Self {
-        Self { spawner }
+    pub(crate) fn new(nix_store: NixStore, spawner: TokioSpawner) -> Self {
+        Self { nix_store, spawner }
     }
 }
 
@@ -22,7 +23,7 @@ impl context::Context for RealContext {
     type Cache = crate::real_cache::RealCache;
     type DrainProgressReporter<W: AsyncWrite + Unpin> =
         RealDrainProgressReporter<W>;
-    type Nix = NixCli;
+    type Nix = NixStore;
     type Spawner = TokioSpawner;
 
     fn handle_rx_error(&mut self, rx_error: protocol::ReceiveError) {
@@ -37,7 +38,7 @@ impl context::Context for RealContext {
     }
 
     fn nix(&self) -> &Self::Nix {
-        &NixCli
+        &self.nix_store
     }
 
     fn spawner(&self) -> &Self::Spawner {

@@ -92,17 +92,17 @@ pub trait Nix: Clone + Send + 'static {
     type Error: Error + Send;
 
     fn get_narinfo(
-        &self,
+        &mut self,
         store_path: &NixStorePath<StoreDir>,
     ) -> impl Future<Output = Result<NarInfo<SmolStr, StoreDir>, Self::Error>> + Send;
 
     fn pack_nar(
-        &self,
+        &mut self,
         store_path: &NixStorePath<StoreDir>,
     ) -> impl Future<Output = Result<(Bytes, NarFileName), Self::Error>> + Send;
 
     fn store_closure(
-        &self,
+        &mut self,
         store_path: &NixStorePath<StoreDir>,
     ) -> impl Future<Output = Result<Vec<NixStorePath<StoreDir>>, Self::Error>> + Send;
 }

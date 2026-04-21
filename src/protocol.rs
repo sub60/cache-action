@@ -9,7 +9,6 @@
 //! drain: \0
 //! ```
 
-use core::convert::Infallible;
 use core::ops::Range;
 use core::pin::Pin;
 use core::task::{Context, Poll, ready};
@@ -58,7 +57,9 @@ pub(crate) enum Message {
 
 #[derive(Clone)]
 pub enum StoreDir {
+    /// The `/nix/store` directory.
     NixStore,
+    /// Any other store directory, guaranteed to not contain the `NUL` byte.
     Other(SmolStr),
 }
 
@@ -239,13 +240,16 @@ impl fmt::Display for StoreDir {
 }
 
 impl str::FromStr for StoreDir {
-    type Err = Infallible;
+    type Err = core::ffi::FromBytesWithNulError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
-            NixStoreLiteral::STR => Self::NixStore,
-            other => Self::Other(other.into()),
-        })
+        if s == NixStoreLiteral::STR {
+            Ok(Self::NixStore)
+        } else if let Some(position) = memchr::memchr(0, s.as_bytes()) {
+            Err(core::ffi::FromBytesWithNulError::InteriorNul { position })
+        } else {
+            Ok(Self::Other(s.into()))
+        }
     }
 }
 

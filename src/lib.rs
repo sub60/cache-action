@@ -4,7 +4,7 @@
 mod context;
 mod drain;
 mod event_loop;
-mod nix_cli;
+mod nix_store;
 #[cfg(feature = "noop-cache")]
 mod noop_cache;
 mod protocol;

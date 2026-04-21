@@ -94,7 +94,7 @@ pub(crate) async fn run<Ctx: Context>(
             message_res = message_rx.recv_async() => {
                 match message_res.expect("message_tx is still alive") {
                     Ok(Event::PushStorePath(store_path)) => {
-                        let nix = ctx.nix().clone();
+                        let mut nix = ctx.nix().clone();
                         let fut = async move {
                             nix.store_closure(&store_path)
                                 .await
@@ -187,7 +187,7 @@ async fn handle_io<I: Io>(
 async fn handle_store_path<C: Cache, N: Nix>(
     store_path: &NixStorePath<StoreDir>,
     cache: C,
-    nix: N,
+    mut nix: N,
 ) -> Result<HandlePathOutcome, HandlePathError<C, N>> {
     let narinfo_filename = NarInfoFileName { store_hash: *store_path.hash() };
 
