@@ -1,7 +1,6 @@
 use futures::AsyncWrite;
 
 use crate::nix_cli::NixCli;
-use crate::real_cache::RealCache;
 use crate::real_drain_progress_reporter::RealDrainProgressReporter;
 use crate::tokio::TokioSpawner;
 use crate::{context, protocol};
@@ -17,7 +16,10 @@ impl RealContext {
 }
 
 impl context::Context for RealContext {
-    type Cache = RealCache;
+    #[cfg(feature = "noop-cache")]
+    type Cache = crate::noop_cache::NoopCache;
+    #[cfg(not(feature = "noop-cache"))]
+    type Cache = crate::real_cache::RealCache;
     type DrainProgressReporter<W: AsyncWrite + Unpin> =
         RealDrainProgressReporter<W>;
     type Nix = NixCli;

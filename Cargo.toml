@@ -3,6 +3,9 @@ name = "cache-action"
 version = "0.0.10"
 edition = "2024"
 
+[features]
+noop-cache = []
+
 [dependencies]
 async-compat = "0.2"
 bytes = "1"
@@ -18,9 +21,7 @@ nixb = { git = "https://github.com/noib3/nixb", branch = "store-path-info", feat
   "store",
 ] }
 pin-project-lite = "0.2"
-reqwest = { version = "0.12", default-features = false, features = [
-  "rustls-tls",
-] }
+reqwest = "0.13"
 smol_str = "0.3.6"
 tokio = { version = "1", default-features = false, features = [
   "io-std",

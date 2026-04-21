@@ -5,8 +5,11 @@ mod context;
 mod drain;
 mod event_loop;
 mod nix_cli;
+#[cfg(feature = "noop-cache")]
+mod noop_cache;
 mod protocol;
 mod push;
+#[cfg(not(feature = "noop-cache"))]
 mod real_cache;
 mod real_context;
 mod real_drain_progress_reporter;

@@ -14,7 +14,6 @@ use nix::unistd;
 use nix_types::{CacheName, UserName};
 use tokio::net::{UnixListener as TokioUnixListener, UnixStream};
 
-use crate::real_cache::{CacheConnectError, RealCache};
 use crate::real_context::RealContext;
 use crate::tokio::Tokio;
 use crate::{AuthToken, event_loop};
@@ -34,7 +33,8 @@ pub struct StartArgs {
 enum StartError {
     BindSocket(io::Error),
     CanonicalizeSocketPath(PathBuf, io::Error),
-    ConnectToCache(CacheConnectError),
+    #[cfg(not(feature = "noop-cache"))]
+    ConnectToCache(crate::real_cache::CacheConnectError),
     CreatePipe(nix::Error),
     DaemonDidntStart,
     ForkProcess(nix::Error),
@@ -53,12 +53,15 @@ pub(crate) fn start(args: StartArgs) {
 }
 
 fn start_inner(args: StartArgs) -> Result<(), StartError> {
-    let cache = futures::executor::block_on(RealCache::connect(
-        args.user,
-        args.cache,
-        args.auth_token,
-    ))
-    .map_err(StartError::ConnectToCache)?;
+    let cache = cfg_select! {
+        feature = "noop-cache" => crate::noop_cache::NoopCache::default(),
+        _ => futures::executor::block_on(crate::real_cache::RealCache::connect(
+                args.user,
+                args.cache,
+                args.auth_token,
+            ))
+            .map_err(StartError::ConnectToCache)?
+    };
 
     let std_listener =
         StdUnixListener::bind(&args.socket).map_err(StartError::BindSocket)?;
@@ -176,6 +179,7 @@ impl fmt::Display for StartError {
                     path.display()
                 )
             },
+            #[cfg(not(feature = "noop-cache"))]
             Self::ConnectToCache(error) => error.fmt(f),
             Self::CreatePipe(error) => {
                 write!(f, "Couldn't create pipe: {error}")
