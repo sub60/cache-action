@@ -1123,7 +1123,7 @@ dependencies = [
 [[package]]
 name = "nixb"
 version = "0.1.0"
-source = "git+https://github.com/noib3/nixb?branch=store-path-info#d1fe5f3c163e0212bcae717a47d05b0f27445d8e"
+source = "git+https://github.com/noib3/nixb?branch=store-path-info#e4fb0a3a39337571522780ae7e79a4e24e9b0960"
 dependencies = [
  "nixb-contexts",
  "nixb-error",
@@ -1135,7 +1135,7 @@ dependencies = [
 [[package]]
 name = "nixb-contexts"
 version = "0.1.0"
-source = "git+https://github.com/noib3/nixb?branch=store-path-info#d1fe5f3c163e0212bcae717a47d05b0f27445d8e"
+source = "git+https://github.com/noib3/nixb?branch=store-path-info#e4fb0a3a39337571522780ae7e79a4e24e9b0960"
 dependencies = [
  "nixb-error",
  "nixb-sys",
@@ -1144,7 +1144,7 @@ dependencies = [
 [[package]]
 name = "nixb-cpp"
 version = "0.1.0"
-source = "git+https://github.com/noib3/nixb?branch=store-path-info#d1fe5f3c163e0212bcae717a47d05b0f27445d8e"
+source = "git+https://github.com/noib3/nixb?branch=store-path-info#e4fb0a3a39337571522780ae7e79a4e24e9b0960"
 dependencies = [
  "cc",
  "nixb-sys",
@@ -1154,7 +1154,7 @@ dependencies = [
 [[package]]
 name = "nixb-error"
 version = "0.1.0"
-source = "git+https://github.com/noib3/nixb?branch=store-path-info#d1fe5f3c163e0212bcae717a47d05b0f27445d8e"
+source = "git+https://github.com/noib3/nixb?branch=store-path-info#e4fb0a3a39337571522780ae7e79a4e24e9b0960"
 dependencies = [
  "nixb-sys",
 ]
@@ -1162,7 +1162,7 @@ dependencies = [
 [[package]]
 name = "nixb-expr"
 version = "0.1.0"
-source = "git+https://github.com/noib3/nixb?branch=store-path-info#d1fe5f3c163e0212bcae717a47d05b0f27445d8e"
+source = "git+https://github.com/noib3/nixb?branch=store-path-info#e4fb0a3a39337571522780ae7e79a4e24e9b0960"
 dependencies = [
  "nixb-contexts",
  "nixb-cpp",
@@ -1175,7 +1175,7 @@ dependencies = [
 [[package]]
 name = "nixb-macros"
 version = "0.1.0"
-source = "git+https://github.com/noib3/nixb?branch=store-path-info#d1fe5f3c163e0212bcae717a47d05b0f27445d8e"
+source = "git+https://github.com/noib3/nixb?branch=store-path-info#e4fb0a3a39337571522780ae7e79a4e24e9b0960"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1185,7 +1185,7 @@ dependencies = [
 [[package]]
 name = "nixb-plugin"
 version = "0.1.0"
-source = "git+https://github.com/noib3/nixb?branch=store-path-info#d1fe5f3c163e0212bcae717a47d05b0f27445d8e"
+source = "git+https://github.com/noib3/nixb?branch=store-path-info#e4fb0a3a39337571522780ae7e79a4e24e9b0960"
 dependencies = [
  "libc",
  "libloading",
@@ -1199,9 +1199,10 @@ dependencies = [
 [[package]]
 name = "nixb-store"
 version = "0.1.0"
-source = "git+https://github.com/noib3/nixb?branch=store-path-info#d1fe5f3c163e0212bcae717a47d05b0f27445d8e"
+source = "git+https://github.com/noib3/nixb?branch=store-path-info#e4fb0a3a39337571522780ae7e79a4e24e9b0960"
 dependencies = [
  "nixb-contexts",
+ "nixb-cpp",
  "nixb-error",
  "nixb-sys",
 ]
@@ -1209,7 +1210,7 @@ dependencies = [
 [[package]]
 name = "nixb-sys"
 version = "0.1.0"
-source = "git+https://github.com/noib3/nixb?branch=store-path-info#d1fe5f3c163e0212bcae717a47d05b0f27445d8e"
+source = "git+https://github.com/noib3/nixb?branch=store-path-info#e4fb0a3a39337571522780ae7e79a4e24e9b0960"
 
 [[package]]
 name = "once_cell"

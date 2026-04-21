@@ -17,6 +17,7 @@ use smol_str::SmolStr;
 use crate::context;
 use crate::protocol::StoreDir;
 
+#[derive(Clone)]
 pub(crate) struct NixStore {
     store: nixb::store::Store,
 }
@@ -42,12 +43,6 @@ impl NixStore {
         };
         let store = nixb::store::Store::open(init, store_uri, [], ctx)?;
         Ok(Self { store })
-    }
-}
-
-impl Clone for NixStore {
-    fn clone(&self) -> Self {
-        todo!()
     }
 }
 
