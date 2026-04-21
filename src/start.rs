@@ -29,8 +29,6 @@ pub struct StartArgs {
     cache: CacheName,
     #[arg(long)]
     auth_token: AuthToken,
-    #[arg(long, default_value_os_t = PathBuf::from("/nix/store"))]
-    store: PathBuf,
 }
 
 enum StartError {
@@ -70,8 +68,7 @@ fn start_inner(args: StartArgs) -> Result<(), StartError> {
     let std_listener =
         StdUnixListener::bind(&args.socket).map_err(StartError::BindSocket)?;
 
-    let nix_store =
-        NixStore::open(&args.store).map_err(StartError::OpenNixStore)?;
+    let nix_store = NixStore::open().map_err(StartError::OpenNixStore)?;
 
     // Create a pipe for the daemon process to signal readiness.
     let (read_fd, write_fd) = unistd::pipe().map_err(StartError::CreatePipe)?;

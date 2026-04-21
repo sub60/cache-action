@@ -1,6 +1,4 @@
 use core::ffi::CStr;
-use std::ffi::CString;
-use std::path::Path;
 
 use bytes::Bytes;
 use nix_types::{
@@ -23,25 +21,10 @@ pub(crate) struct NixStore {
 }
 
 impl NixStore {
-    pub(crate) fn open(store_dir: &Path) -> nixb::Result<Self> {
+    pub(crate) fn open() -> nixb::Result<Self> {
         let mut ctx = nixb::contexts::c_context::CContext::create();
         let init = nixb::store::init::<true>(&mut ctx)?;
-        let store_uri = cfg_select! {
-            unix => {
-                {
-                    use std::os::unix::ffi::OsStrExt;
-                    CString::new(store_dir.as_os_str().as_bytes())
-                        .expect("paths don't contain NUL bytes")
-                }
-            },
-            windows => {
-                compile_error!(
-                    "don't know how to convert path to store URI on Windows"
-                )
-            },
-            _ => compile_error!("unsupported platform"),
-        };
-        let store = nixb::store::Store::open(init, store_uri, [], ctx)?;
+        let store = nixb::store::Store::open(init, c"", [], ctx)?;
         Ok(Self { store })
     }
 }
