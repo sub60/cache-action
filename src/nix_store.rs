@@ -12,11 +12,11 @@ use nix_types::{
     NarFileName,
     NarInfo,
     Nix32Digest,
-    NixHash,
     NixStoreBaseName,
     NixStorePath,
 };
 use nixb::store::GetFsClosureOpts;
+use sha2::{Digest, Sha256};
 use smol_str::SmolStr;
 use tokio::fs;
 use tokio::io::BufReader;
@@ -31,10 +31,8 @@ pub(crate) struct NixStore {
 
 #[derive(Debug)]
 pub(crate) enum NixStoreError {
-    InvalidNarHash(nix_types::NixHashFromStrError),
     Io(io::Error),
     Nix(nixb::Error),
-    NarHashNotSha256,
 }
 
 impl NixStore {
@@ -43,21 +41,6 @@ impl NixStore {
         let init = nixb::store::init::<true>(&mut ctx)?;
         let store = nixb::store::Store::open(init, c"", [], ctx)?;
         Ok(Self { store })
-    }
-
-    fn parse_store_path(
-        &mut self,
-        store_path: &NixStorePath<StoreDir>,
-    ) -> nixb::Result<nixb::store::StorePath> {
-        let mut store_path_bytes = store_path.to_string().into_bytes();
-        store_path_bytes.push(0);
-
-        // SAFETY: we just pushed a trailing NUL byte, and both the StoreDir and
-        // the store basename are guaranteed to not contain any interior NULs.
-        let store_path_cstr =
-            unsafe { CStr::from_bytes_with_nul_unchecked(&store_path_bytes) };
-
-        self.store.parse_path(store_path_cstr)
     }
 }
 
@@ -87,23 +70,11 @@ impl context::Nix for NixStore {
         &mut self,
         store_path: &NixStorePath<StoreDir>,
     ) -> Result<(Bytes, NarFileName), Self::Error> {
-        let file_hash = {
-            let parsed_store_path = self.parse_store_path(store_path)?;
-            let mut path_info =
-                self.store.query_path_info(&parsed_store_path)?;
-            let nar_hash =
-                path_info.with_nar_hash(|hash| hash.parse::<NixHash>())??;
-            let NixHash::Sha256(file_hash) = nar_hash else {
-                return Err(NixStoreError::NarHashNotSha256);
-            };
-            file_hash
-        };
-
         let fs_path = PathBuf::from(store_path.to_string());
         let mut nar_bytes = Vec::new();
         let root = nar_writer::open(&mut nar_bytes).await?;
-        Box::pin(write_nar_path(&fs_path, root)).await?;
-
+        write_nar_path(&fs_path, root).await?;
+        let file_hash = Nix32Digest::new(&Sha256::digest(&nar_bytes).into());
         Ok((nar_bytes.into(), NarFileName { file_hash, extension: None }))
     }
 
@@ -111,9 +82,17 @@ impl context::Nix for NixStore {
         &mut self,
         store_path: &NixStorePath<StoreDir>,
     ) -> Result<Vec<NixStorePath<StoreDir>>, Self::Error> {
+        let mut store_path_bytes = store_path.to_string().into_bytes();
+        store_path_bytes.push(0);
+
+        // SAFETY: we just pushed a trailing NUL byte, and both the StoreDir and
+        // the store basename are guaranteed to not contain any interior NULs.
+        let store_path_cstr =
+            unsafe { CStr::from_bytes_with_nul_unchecked(&store_path_bytes) };
+
         let store_dir = store_path.store_dir();
 
-        let store_path = self.parse_store_path(store_path)?;
+        let store_path = self.store.parse_path(store_path_cstr)?;
 
         let mut res = Ok(vec![]);
 
@@ -194,14 +173,8 @@ async fn read_dir_entries(path: &Path) -> io::Result<Vec<(Vec<u8>, PathBuf)>> {
 impl fmt::Display for NixStoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidNarHash(error) => {
-                write!(f, "couldn't parse store NAR hash: {error}")
-            },
             Self::Io(error) => error.fmt(f),
             Self::Nix(error) => error.fmt(f),
-            Self::NarHashNotSha256 => {
-                write!(f, "store returned a non-sha256 NAR hash")
-            },
         }
     }
 }
@@ -209,10 +182,8 @@ impl fmt::Display for NixStoreError {
 impl std::error::Error for NixStoreError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::InvalidNarHash(error) => Some(error),
             Self::Io(error) => Some(error),
             Self::Nix(error) => Some(error),
-            Self::NarHashNotSha256 => None,
         }
     }
 }
@@ -220,12 +191,6 @@ impl std::error::Error for NixStoreError {
 impl From<io::Error> for NixStoreError {
     fn from(value: io::Error) -> Self {
         Self::Io(value)
-    }
-}
-
-impl From<nix_types::NixHashFromStrError> for NixStoreError {
-    fn from(value: nix_types::NixHashFromStrError) -> Self {
-        Self::InvalidNarHash(value)
     }
 }
 

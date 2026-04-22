@@ -171,6 +171,7 @@ dependencies = [
  "pin-project-lite",
  "pkg-config",
  "reqwest",
+ "sha2",
  "smol_str",
  "tokio",
  "url",
