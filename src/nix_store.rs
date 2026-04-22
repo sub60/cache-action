@@ -1,9 +1,10 @@
 use core::ffi::CStr;
 use core::pin::pin;
+use std::ffi::OsString;
 use std::io;
-use std::os::unix::ffi::{OsStrExt, OsStringExt};
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use async_compat::Compat;
 use either::Either;
@@ -48,7 +49,7 @@ impl context::Nix for NixStore {
         let store_path = store_path.to_string();
         let mut writer = pin!(Compat::new(writer));
         let root = nar_writer::open(&mut writer).await.map_err(Either::Left)?;
-        write_nar(Path::new(&store_path), root).await.map_err(Either::Left)?;
+        write_nar(root, Path::new(&store_path)).await.map_err(Either::Left)?;
         writer.shutdown().await.map_err(Either::Left)
     }
 
@@ -99,47 +100,50 @@ impl context::Nix for NixStore {
 }
 
 async fn write_nar(
+    node: nar_writer::Node<'_, '_>,
     node_path: &Path,
-    nar_node: nar_writer::Node<'_, '_>,
 ) -> io::Result<()> {
     let metadata = fs::symlink_metadata(node_path).await?;
     let file_type = metadata.file_type();
 
     if file_type.is_dir() {
-        let mut directory = nar_node.directory().await?;
-        for (name, entry_path) in read_dir_entries(node_path).await? {
-            let child = directory.entry(&name).await?;
-            Box::pin(write_nar(&entry_path, child)).await?;
+        let mut directory = node.directory().await?;
+        let mut child_path = node_path.to_owned();
+        for child_name in read_dir_entries(node_path).await? {
+            let child = directory.entry(child_name.as_bytes()).await?;
+            child_path.push(&child_name);
+            Box::pin(write_nar(child, &child_path)).await?;
+            child_path.pop();
         }
-        directory.close().await?;
-    } else if file_type.is_symlink() {
+        return directory.close().await;
+    }
+
+    if file_type.is_symlink() {
         let target = fs::read_link(node_path).await?;
-        nar_node.symlink(target.as_os_str().as_bytes()).await?;
-    } else if file_type.is_file() {
-        // If it's executable by the user, it'll become executable. This matches
-        // nix's dump() function behaviour.
+        return node.symlink(target.as_os_str().as_bytes()).await;
+    }
+
+    if file_type.is_file() {
         let executable = metadata.permissions().mode() & 0o100 != 0;
         let file = fs::File::open(node_path).await?;
         let mut reader = BufReader::new(file);
-        nar_node.file(executable, metadata.len(), &mut reader).await?;
-    } else {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("unsupported file type at {}", node_path.display()),
-        ));
+        return node.file(executable, metadata.len(), &mut reader).await;
     }
 
-    Ok(())
+    Err(io::Error::new(
+        io::ErrorKind::InvalidData,
+        format!("unsupported file type at {}", node_path.display()),
+    ))
 }
 
-async fn read_dir_entries(path: &Path) -> io::Result<Vec<(Vec<u8>, PathBuf)>> {
-    let mut read_dir = fs::read_dir(path).await?;
-    let mut entries = vec![];
-
+/// Returns the file names of the children of the directory at the given path,
+/// sorted lexicographically.
+async fn read_dir_entries(dir_path: &Path) -> io::Result<Vec<OsString>> {
+    let mut read_dir = fs::read_dir(dir_path).await?;
+    let mut file_names = vec![];
     while let Some(entry) = read_dir.next_entry().await? {
-        entries.push((entry.file_name().into_vec(), entry.path()));
+        file_names.push(entry.file_name());
     }
-
-    entries.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
-    Ok(entries)
+    file_names.sort();
+    Ok(file_names)
 }

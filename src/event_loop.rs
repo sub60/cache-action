@@ -224,7 +224,7 @@ async fn handle_store_path<C: Cache, N: Nix>(
         .await
         .map_err(HandlePathError::CheckHasNar)?;
 
-    let mut nar_size = NonZero::new(1).expect("not zero");
+    let mut nar_size = 0;
 
     // Just like `nix copy --to`, we write the NAR *before* the NARInfo to avoid
     // the cache server temporarily reporting false positives.
@@ -251,6 +251,8 @@ async fn handle_store_path<C: Cache, N: Nix>(
             },
         })?;
     }
+
+    let nar_size = NonZero::new(nar_size).expect("NARs are never empty");
 
     let narinfo = NarInfo {
         store_path: store_path.clone(),
