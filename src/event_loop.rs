@@ -1,10 +1,19 @@
 use core::fmt;
+use core::num::NonZero;
 use core::pin::pin;
 use std::collections::HashSet;
 
+use async_compat::Compat;
+use either::Either;
 use futures::stream::{FusedStream, FuturesUnordered};
-use futures::{AsyncRead, AsyncWrite, StreamExt, select};
-use nix_types::{NarInfoFileName, NixStorePath};
+use futures::{AsyncRead, AsyncWrite, StreamExt, future, select};
+use nix_types::{
+    CompressionAlgorithm,
+    NarFileName,
+    NarInfo,
+    NarInfoFileName,
+    NixStorePath,
+};
 
 use crate::context::{
     Cache,
@@ -15,6 +24,8 @@ use crate::context::{
     Spawner,
 };
 use crate::protocol::{self, StoreDir};
+
+const NAR_STREAM_BUFFER_SIZE: usize = 64 * 1024;
 
 pub(crate) trait Io: Send + 'static {
     type Reader: AsyncRead + Send;
@@ -62,10 +73,10 @@ pub(crate) enum HandlePathOutcome {
 pub(crate) enum HandlePathError<C: Cache, N: Nix> {
     CheckHasNar(C::Error),
     CheckHasNarInfo(C::Error),
-    WriteNar(C::Error),
+    GetNarHash(N::Error),
+    WriteNarFromStore(N::Error),
     WriteNarInfo(C::Error),
-    GetNar(N::Error),
-    GetNarInfo(N::Error),
+    WriteNarToCache(C::Error),
 }
 
 enum Event<Writer> {
@@ -201,32 +212,59 @@ async fn handle_store_path<C: Cache, N: Nix>(
         return Ok(HandlePathOutcome::Skipped);
     }
 
-    let narinfo = nix
-        .get_narinfo(store_path)
+    let nar_hash = nix
+        .get_nar_hash(store_path)
         .await
-        .map_err(HandlePathError::GetNarInfo)?;
+        .map_err(HandlePathError::GetNarHash)?;
 
-    let (nar_bytes, nar_filename) =
-        nix.pack_nar(store_path).await.map_err(HandlePathError::GetNar)?;
+    let nar_filename = NarFileName { file_hash: nar_hash, extension: None };
 
     let has_nar = cache
         .has_nar(&nar_filename)
         .await
         .map_err(HandlePathError::CheckHasNar)?;
 
-    let nar_size = nar_bytes.len() as u64;
+    let mut nar_size = NonZero::new(1).expect("not zero");
 
     // Just like `nix copy --to`, we write the NAR *before* the NARInfo to avoid
     // the cache server temporarily reporting false positives.
     if !has_nar {
-        cache
-            .write_nar(nar_filename, nar_bytes)
-            .await
-            .map_err(HandlePathError::WriteNar)?;
-    } else {
-        // Drop the NAR bytes as early as possible.
-        drop(nar_bytes);
+        let (reader, writer) = tokio::io::duplex(NAR_STREAM_BUFFER_SIZE);
+
+        let (nix_res, cache_res) = future::join(
+            nix.write_nar(store_path, Compat::new(writer)),
+            cache.write_nar(nar_filename, Compat::new(reader)),
+        )
+        .await;
+
+        nix_res.map_err(|err| match err {
+            Either::Left(_io_err) => unreachable!("in memory duplex"),
+            Either::Right(nix_err) => {
+                HandlePathError::WriteNarFromStore(nix_err)
+            },
+        })?;
+
+        cache_res.map_err(|err| match err {
+            Either::Left(_io_err) => unreachable!("in memory duplex"),
+            Either::Right(cache_err) => {
+                HandlePathError::WriteNarToCache(cache_err)
+            },
+        })?;
     }
+
+    let narinfo = NarInfo {
+        store_path: store_path.clone(),
+        url: "",
+        compression: CompressionAlgorithm::None,
+        file_hash: nar_hash,
+        file_size: nar_size,
+        nar_hash,
+        nar_size,
+        references: Default::default(),
+        deriver: Default::default(),
+        signatures: Default::default(),
+        content_address: Default::default(),
+    };
 
     let narinfo_size = cache
         .write_narinfo(narinfo_filename, narinfo)
@@ -236,7 +274,10 @@ async fn handle_store_path<C: Cache, N: Nix>(
     Ok(if has_nar {
         HandlePathOutcome::PushedNarInfo { narinfo_size }
     } else {
-        HandlePathOutcome::PushedNarAndNarInfo { nar_size, narinfo_size }
+        HandlePathOutcome::PushedNarAndNarInfo {
+            nar_size: nar_size.into(),
+            narinfo_size,
+        }
     })
 }
 
@@ -283,17 +324,17 @@ impl<C: Cache, N: Nix> fmt::Display for HandlePathError<C, N> {
                     "couldn't check NARInfo existence on remote cache: {err}"
                 )
             },
-            Self::WriteNar(err) => {
-                write!(f, "couldn't write NAR to remote cache: {err}")
+            Self::GetNarHash(err) => {
+                write!(f, "couldn't get NAR hash: {err}")
+            },
+            Self::WriteNarFromStore(err) => {
+                write!(f, "couldn't get NAR bytes: {err}")
             },
             Self::WriteNarInfo(err) => {
                 write!(f, "couldn't write NARInfo to remote cache: {err}")
             },
-            Self::GetNar(err) => {
-                write!(f, "couldn't get NAR bytes: {err}")
-            },
-            Self::GetNarInfo(err) => {
-                write!(f, "couldn't get NARInfo: {err}")
+            Self::WriteNarToCache(err) => {
+                write!(f, "couldn't write NAR to cache: {err}")
             },
         }
     }

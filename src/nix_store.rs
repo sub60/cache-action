@@ -1,25 +1,23 @@
 use core::ffi::CStr;
 use core::fmt;
+use core::pin::pin;
 use std::io;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use bytes::Bytes;
+use async_compat::Compat;
+use either::Either;
 use nix_compat::nar::writer::r#async as nar_writer;
 use nix_types::{
-    CompressionAlgorithm,
-    NarFileName,
-    NarInfo,
     Nix32Digest,
+    NixHashFromStrError,
     NixStoreBaseName,
     NixStorePath,
 };
 use nixb::store::GetFsClosureOpts;
-use sha2::{Digest, Sha256};
-use smol_str::SmolStr;
 use tokio::fs;
-use tokio::io::BufReader;
+use tokio::io::{AsyncWriteExt as _, BufReader};
 
 use crate::context;
 use crate::protocol::StoreDir;
@@ -31,6 +29,8 @@ pub(crate) struct NixStore {
 
 #[derive(Debug)]
 pub(crate) enum NixStoreError {
+    InvalidContentAddress(nix_types::ContentAddressFromStrError),
+    InvalidNarHash(NixHashFromStrError),
     Io(io::Error),
     Nix(nixb::Error),
 }
@@ -47,35 +47,23 @@ impl NixStore {
 impl context::Nix for NixStore {
     type Error = NixStoreError;
 
-    async fn get_narinfo(
+    async fn get_nar_hash(
         &mut self,
-        store_path: &NixStorePath<StoreDir>,
-    ) -> Result<NarInfo<SmolStr, StoreDir>, Self::Error> {
-        Ok(NarInfo {
-            store_path: store_path.clone(),
-            url: "".into(),
-            compression: CompressionAlgorithm::None,
-            file_hash: Nix32Digest::new(&[0; _]),
-            file_size: 42.try_into().expect("not zero"),
-            nar_hash: Nix32Digest::new(&[0; _]),
-            nar_size: 42.try_into().expect("not zero"),
-            references: Default::default(),
-            deriver: None,
-            signatures: Default::default(),
-            content_address: None,
-        })
+        _store_path: &NixStorePath<StoreDir>,
+    ) -> Result<Nix32Digest<32>, Self::Error> {
+        todo!()
     }
 
-    async fn pack_nar(
+    async fn write_nar(
         &mut self,
         store_path: &NixStorePath<StoreDir>,
-    ) -> Result<(Bytes, NarFileName), Self::Error> {
-        let fs_path = PathBuf::from(store_path.to_string());
-        let mut nar_bytes = Vec::new();
-        let root = nar_writer::open(&mut nar_bytes).await?;
-        write_nar_path(&fs_path, root).await?;
-        let file_hash = Nix32Digest::new(&Sha256::digest(&nar_bytes).into());
-        Ok((nar_bytes.into(), NarFileName { file_hash, extension: None }))
+        writer: impl futures::AsyncWrite + Send,
+    ) -> Result<(), Either<io::Error, Self::Error>> {
+        let store_path = store_path.to_string();
+        let mut writer = pin!(Compat::new(writer));
+        let root = nar_writer::open(&mut writer).await.map_err(Either::Left)?;
+        write_nar(Path::new(&store_path), root).await.map_err(Either::Left)?;
+        writer.shutdown().await.map_err(Either::Left)
     }
 
     async fn store_closure(
@@ -120,38 +108,38 @@ impl context::Nix for NixStore {
             GetFsClosureOpts::default(),
         )?;
 
-        res.map_err(NixStoreError::from)
+        res.map_err(Into::into)
     }
 }
 
-async fn write_nar_path(
-    path: &Path,
+async fn write_nar(
+    node_path: &Path,
     nar_node: nar_writer::Node<'_, '_>,
 ) -> io::Result<()> {
-    let metadata = fs::symlink_metadata(path).await?;
+    let metadata = fs::symlink_metadata(node_path).await?;
     let file_type = metadata.file_type();
 
     if file_type.is_dir() {
         let mut directory = nar_node.directory().await?;
-        for (name, entry_path) in read_dir_entries(path).await? {
+        for (name, entry_path) in read_dir_entries(node_path).await? {
             let child = directory.entry(&name).await?;
-            Box::pin(write_nar_path(&entry_path, child)).await?;
+            Box::pin(write_nar(&entry_path, child)).await?;
         }
         directory.close().await?;
     } else if file_type.is_symlink() {
-        let target = fs::read_link(path).await?;
+        let target = fs::read_link(node_path).await?;
         nar_node.symlink(target.as_os_str().as_bytes()).await?;
     } else if file_type.is_file() {
         // If it's executable by the user, it'll become executable. This matches
         // nix's dump() function behaviour.
         let executable = metadata.permissions().mode() & 0o100 != 0;
-        let file = fs::File::open(path).await?;
+        let file = fs::File::open(node_path).await?;
         let mut reader = BufReader::new(file);
         nar_node.file(executable, metadata.len(), &mut reader).await?;
     } else {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("unsupported file type at {}", path.display()),
+            format!("unsupported file type at {}", node_path.display()),
         ));
     }
 
@@ -173,6 +161,12 @@ async fn read_dir_entries(path: &Path) -> io::Result<Vec<(Vec<u8>, PathBuf)>> {
 impl fmt::Display for NixStoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidContentAddress(error) => {
+                write!(f, "couldn't parse content address: {error}")
+            },
+            Self::InvalidNarHash(error) => {
+                write!(f, "couldn't parse NAR hash: {error}")
+            },
             Self::Io(error) => error.fmt(f),
             Self::Nix(error) => error.fmt(f),
         }
@@ -182,9 +176,23 @@ impl fmt::Display for NixStoreError {
 impl std::error::Error for NixStoreError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::InvalidContentAddress(error) => Some(error),
+            Self::InvalidNarHash(error) => Some(error),
             Self::Io(error) => Some(error),
             Self::Nix(error) => Some(error),
         }
+    }
+}
+
+impl From<nix_types::ContentAddressFromStrError> for NixStoreError {
+    fn from(value: nix_types::ContentAddressFromStrError) -> Self {
+        Self::InvalidContentAddress(value)
+    }
+}
+
+impl From<NixHashFromStrError> for NixStoreError {
+    fn from(value: NixHashFromStrError) -> Self {
+        Self::InvalidNarHash(value)
     }
 }
 

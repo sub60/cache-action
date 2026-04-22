@@ -1,9 +1,14 @@
 use core::fmt;
+use std::error::Error as StdError;
+use std::io;
 use std::sync::LazyLock;
 
-use bytes::Bytes;
+use async_compat::Compat;
+use either::Either;
+use futures::AsyncRead;
 use nix_types::{CacheName, NarFileName, NarInfo, NarInfoFileName, UserName};
 use reqwest::{Method, StatusCode};
+use tokio_util::io::ReaderStream;
 
 use crate::protocol::StoreDir;
 use crate::{AuthToken, context};
@@ -117,24 +122,32 @@ impl context::Cache for RealCache {
     async fn write_nar(
         &self,
         nar_filename: NarFileName,
-        nar_bytes: Bytes,
-    ) -> Result<(), Self::Error> {
+        nar_bytes: impl AsyncRead + Send + 'static,
+    ) -> Result<(), Either<io::Error, Self::Error>> {
+        let body = reqwest::Body::wrap_stream(ReaderStream::with_capacity(
+            Compat::new(nar_bytes),
+            64 * 1024,
+        ));
+
         let response = self
             .client
             .put(self.nar_url(&nar_filename))
-            .body(nar_bytes)
+            .body(body)
             .send()
             .await
-            .map_err(CacheRequestError::Request)?;
+            .map_err(|error| match body_io_error(&error) {
+                Some(error) => Either::Left(error),
+                None => Either::Right(CacheRequestError::Request(error)),
+            })?;
 
         if response.status().is_success() {
             Ok(())
         } else {
-            Err(CacheRequestError::UnexpectedResponse {
+            Err(Either::Right(CacheRequestError::UnexpectedResponse {
                 method: Method::PUT,
                 status: response.status(),
                 url: self.nar_url(&nar_filename),
-            })
+            }))
         }
     }
 
@@ -173,6 +186,22 @@ impl fmt::Display for CacheConnectError {
             },
         }
     }
+}
+
+fn body_io_error(error: &reqwest::Error) -> Option<io::Error> {
+    if !error.is_body() {
+        return None;
+    }
+
+    let mut source: Option<&(dyn StdError + 'static)> = error.source();
+    while let Some(error) = source {
+        if let Some(io_error) = error.downcast_ref::<io::Error>() {
+            return Some(io::Error::new(io_error.kind(), io_error.to_string()));
+        }
+        source = error.source();
+    }
+
+    None
 }
 
 impl fmt::Display for CacheRequestError {

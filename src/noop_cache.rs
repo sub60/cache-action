@@ -1,4 +1,7 @@
 use core::convert::Infallible;
+use std::io;
+
+use either::Either;
 
 use crate::context::Cache;
 use crate::protocol::StoreDir;
@@ -26,8 +29,10 @@ impl Cache for NoopCache {
     async fn write_nar(
         &self,
         _: nix_types::NarFileName,
-        _: bytes::Bytes,
-    ) -> Result<(), Self::Error> {
+        nar_bytes: impl futures::AsyncRead + Send + 'static,
+    ) -> Result<(), Either<io::Error, Self::Error>> {
+        let mut sink = futures::io::sink();
+        futures::io::copy(nar_bytes, &mut sink).await.map_err(Either::Left)?;
         Ok(())
     }
 
