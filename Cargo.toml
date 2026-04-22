@@ -15,6 +15,10 @@ flume = { version = "0.12" }
 futures = { version = "0.3" }
 memchr = "2"
 nix = { version = "0.31", features = ["process"] }
+nix-compat = { git = "https://git.snix.dev/snix/snix", default-features = false, features = [
+  "async",
+  "wire",
+] }
 nix-types = { git = "ssh://git@github.com/sub60/nix-types.git" }
 nixb = { git = "https://github.com/noib3/nixb", branch = "store-path-info", features = [
   "nix-2-35",
