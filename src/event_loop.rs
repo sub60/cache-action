@@ -3,7 +3,6 @@ use core::pin::pin;
 use std::collections::HashSet;
 
 use async_compat::Compat;
-use either::Either;
 use futures::stream::{FusedStream, FuturesUnordered};
 use futures::{AsyncRead, AsyncWrite, StreamExt, future, select};
 use nix_types::{
@@ -45,7 +44,7 @@ pub(crate) struct ActionReport<Ctx: Context> {
     /// The list of store paths for which it wasn't possible to compute their
     /// closure, together with the corresponding error.
     pub(crate) path_closure_errors:
-        Vec<(NixStorePath<StoreDir>, <Ctx::Nix as Nix>::Error)>,
+        Vec<(NixStorePath<StoreDir>, <Ctx::Nix as Nix>::StoreClosureError)>,
 
     /// The list of store paths for which it wasn't possible to compute their
     /// closure, together with the corresponding error.
@@ -72,8 +71,8 @@ pub(crate) enum HandlePathOutcome {
 pub(crate) enum HandlePathError<C: Cache, N: Nix> {
     CheckHasNar(C::Error),
     CheckHasNarInfo(C::Error),
-    GetPathInfos(N::Error),
-    WriteNarFromStore(N::Error),
+    GetPathInfos(N::PathInfosError),
+    WriteNarFromStore(N::WriteNarError),
     WriteNarInfo(C::Error),
     WriteNarToCache(C::Error),
 }
@@ -234,19 +233,8 @@ async fn handle_store_path<C: Cache, N: Nix>(
         )
         .await;
 
-        nix_res.map_err(|err| match err {
-            Either::Left(_io_err) => unreachable!("in memory duplex"),
-            Either::Right(nix_err) => {
-                HandlePathError::WriteNarFromStore(nix_err)
-            },
-        })?;
-
-        cache_res.map_err(|err| match err {
-            Either::Left(_io_err) => unreachable!("in memory duplex"),
-            Either::Right(cache_err) => {
-                HandlePathError::WriteNarToCache(cache_err)
-            },
-        })?;
+        nix_res.map_err(HandlePathError::WriteNarFromStore)?;
+        cache_res.map_err(HandlePathError::WriteNarToCache)?;
     }
 
     let nar_size = nix
@@ -327,10 +315,10 @@ impl<C: Cache, N: Nix> fmt::Display for HandlePathError<C, N> {
                 )
             },
             Self::GetPathInfos(err) => {
-                write!(f, "couldn't get NAR hash: {err}")
+                write!(f, "couldn't get store path infos: {err}")
             },
             Self::WriteNarFromStore(err) => {
-                write!(f, "couldn't get NAR bytes: {err}")
+                write!(f, "couldn't get NAR from store: {err}")
             },
             Self::WriteNarInfo(err) => {
                 write!(f, "couldn't write NARInfo to remote cache: {err}")

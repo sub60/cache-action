@@ -1,10 +1,7 @@
 use core::fmt;
-use std::error::Error as StdError;
-use std::io;
 use std::sync::LazyLock;
 
 use async_compat::Compat;
-use either::Either;
 use futures::AsyncRead;
 use nix_types::{CacheName, NarFileName, NarInfo, NarInfoFileName, UserName};
 use reqwest::{Method, StatusCode};
@@ -123,7 +120,7 @@ impl context::Cache for RealCache {
         &self,
         nar_filename: NarFileName,
         nar_bytes: impl AsyncRead + Send + 'static,
-    ) -> Result<(), Either<io::Error, Self::Error>> {
+    ) -> Result<(), Self::Error> {
         let body = reqwest::Body::wrap_stream(ReaderStream::with_capacity(
             Compat::new(nar_bytes),
             64 * 1024,
@@ -135,19 +132,16 @@ impl context::Cache for RealCache {
             .body(body)
             .send()
             .await
-            .map_err(|error| match body_io_error(&error) {
-                Some(error) => Either::Left(error),
-                None => Either::Right(CacheRequestError::Request(error)),
-            })?;
+            .map_err(CacheRequestError::Request)?;
 
         if response.status().is_success() {
             Ok(())
         } else {
-            Err(Either::Right(CacheRequestError::UnexpectedResponse {
+            Err(CacheRequestError::UnexpectedResponse {
                 method: Method::PUT,
                 status: response.status(),
                 url: self.nar_url(&nar_filename),
-            }))
+            })
         }
     }
 
@@ -186,22 +180,6 @@ impl fmt::Display for CacheConnectError {
             },
         }
     }
-}
-
-fn body_io_error(error: &reqwest::Error) -> Option<io::Error> {
-    if !error.is_body() {
-        return None;
-    }
-
-    let mut source: Option<&(dyn StdError + 'static)> = error.source();
-    while let Some(error) = source {
-        if let Some(io_error) = error.downcast_ref::<io::Error>() {
-            return Some(io::Error::new(io_error.kind(), io_error.to_string()));
-        }
-        source = error.source();
-    }
-
-    None
 }
 
 impl fmt::Display for CacheRequestError {

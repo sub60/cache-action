@@ -8,7 +8,6 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use async_compat::Compat;
-use either::Either;
 use nix_compat::nar::writer::r#async as nar_writer;
 use nix_types::{Nix32Digest, NixStoreBaseName, NixStorePath};
 use nixb::store::GetFsClosureOpts;
@@ -45,12 +44,14 @@ impl NixStore {
 }
 
 impl context::Nix for NixStore {
-    type Error = nixb::Error;
+    type PathInfosError = nixb::Error;
+    type StoreClosureError = nixb::Error;
+    type WriteNarError = io::Error;
 
     async fn get_nar_hash(
         &mut self,
         store_path: &NixStorePath<StoreDir>,
-    ) -> Result<Nix32Digest<32>, Self::Error> {
+    ) -> Result<Nix32Digest<32>, Self::PathInfosError> {
         let path = self.parse_path(store_path)?;
         self.store.query_path_info(&path)?.with_nar_hash(|hash| {
             hash.strip_prefix("sha256:")
@@ -63,7 +64,7 @@ impl context::Nix for NixStore {
     async fn get_nar_size(
         &mut self,
         store_path: &NixStorePath<StoreDir>,
-    ) -> Result<NonZeroU64, Self::Error> {
+    ) -> Result<NonZeroU64, Self::PathInfosError> {
         let path = self.parse_path(store_path)?;
         self.store.query_path_info(&path)?.get_nar_size()?.ok_or_else(|| {
             nixb::Error::from_message(format_args!(
@@ -76,18 +77,18 @@ impl context::Nix for NixStore {
         &mut self,
         store_path: &NixStorePath<StoreDir>,
         writer: impl futures::AsyncWrite + Send,
-    ) -> Result<(), Either<io::Error, Self::Error>> {
+    ) -> Result<(), Self::WriteNarError> {
         let store_path = store_path.to_string();
         let mut writer = pin!(Compat::new(writer));
-        let root = nar_writer::open(&mut writer).await.map_err(Either::Left)?;
-        write_nar(root, Path::new(&store_path)).await.map_err(Either::Left)?;
-        writer.shutdown().await.map_err(Either::Left)
+        let root = nar_writer::open(&mut writer).await?;
+        write_nar(root, Path::new(&store_path)).await?;
+        writer.shutdown().await
     }
 
     async fn store_closure(
         &mut self,
         store_path: &NixStorePath<StoreDir>,
-    ) -> Result<Vec<NixStorePath<StoreDir>>, Self::Error> {
+    ) -> Result<Vec<NixStorePath<StoreDir>>, Self::StoreClosureError> {
         let path = self.parse_path(store_path)?;
 
         let mut res = Ok(vec![]);

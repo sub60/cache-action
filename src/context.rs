@@ -1,9 +1,7 @@
 use core::error::Error;
 use core::fmt;
 use core::num::NonZeroU64;
-use std::io;
 
-use either::Either;
 use futures::{AsyncRead, AsyncWrite};
 use nix_types::{
     NarFileName,
@@ -62,7 +60,7 @@ pub trait Cache: Clone + Send + 'static {
         &self,
         nar_filename: NarFileName,
         nar_bytes: impl AsyncRead + Send + 'static,
-    ) -> impl Future<Output = Result<(), Either<io::Error, Self::Error>>> + Send;
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     fn write_narinfo(
         &self,
@@ -96,28 +94,32 @@ pub trait DrainProgressReporter {
 }
 
 pub trait Nix: Clone + Send + 'static {
-    type Error: Error + Send;
+    type PathInfosError: Error + Send;
+    type StoreClosureError: Error + Send;
+    type WriteNarError: Error + Send;
 
     fn get_nar_hash(
         &mut self,
         store_path: &NixStorePath<StoreDir>,
-    ) -> impl Future<Output = Result<Nix32Digest<32>, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Nix32Digest<32>, Self::PathInfosError>> + Send;
 
     fn get_nar_size(
         &mut self,
         store_path: &NixStorePath<StoreDir>,
-    ) -> impl Future<Output = Result<NonZeroU64, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<NonZeroU64, Self::PathInfosError>> + Send;
 
     fn store_closure(
         &mut self,
         store_path: &NixStorePath<StoreDir>,
-    ) -> impl Future<Output = Result<Vec<NixStorePath<StoreDir>>, Self::Error>> + Send;
+    ) -> impl Future<
+        Output = Result<Vec<NixStorePath<StoreDir>>, Self::StoreClosureError>,
+    > + Send;
 
     fn write_nar(
         &mut self,
         store_path: &NixStorePath<StoreDir>,
         writer: impl AsyncWrite + Send,
-    ) -> impl Future<Output = Result<(), Either<io::Error, Self::Error>>> + Send;
+    ) -> impl Future<Output = Result<(), Self::WriteNarError>> + Send;
 }
 
 pub trait Spawner {
