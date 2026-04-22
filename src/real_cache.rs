@@ -1,9 +1,11 @@
 use core::fmt;
 use std::sync::LazyLock;
 
-use bytes::Bytes;
+use async_compat::Compat;
+use futures::AsyncRead;
 use nix_types::{CacheName, NarFileName, NarInfo, NarInfoFileName, UserName};
 use reqwest::{Method, StatusCode};
+use tokio_util::io::ReaderStream;
 
 use crate::protocol::StoreDir;
 use crate::{AuthToken, context};
@@ -117,12 +119,17 @@ impl context::Cache for RealCache {
     async fn write_nar(
         &self,
         nar_filename: NarFileName,
-        nar_bytes: Bytes,
+        nar_bytes: impl AsyncRead + Send + 'static,
     ) -> Result<(), Self::Error> {
+        let body = reqwest::Body::wrap_stream(ReaderStream::with_capacity(
+            Compat::new(nar_bytes),
+            64 * 1024,
+        ));
+
         let response = self
             .client
             .put(self.nar_url(&nar_filename))
-            .body(nar_bytes)
+            .body(body)
             .send()
             .await
             .map_err(CacheRequestError::Request)?;

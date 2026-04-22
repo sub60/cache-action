@@ -1,10 +1,15 @@
 use core::error::Error;
 use core::fmt;
+use core::num::NonZeroU64;
 
-use bytes::Bytes;
-use futures::AsyncWrite;
-use nix_types::{NarFileName, NarInfo, NarInfoFileName, NixStorePath};
-use smol_str::SmolStr;
+use futures::{AsyncRead, AsyncWrite};
+use nix_types::{
+    NarFileName,
+    NarInfo,
+    NarInfoFileName,
+    Nix32Digest,
+    NixStorePath,
+};
 
 use crate::event_loop;
 use crate::protocol::{self, StoreDir};
@@ -54,7 +59,7 @@ pub trait Cache: Clone + Send + 'static {
     fn write_nar(
         &self,
         nar_filename: NarFileName,
-        nar_bytes: Bytes,
+        nar_bytes: impl AsyncRead + Send + 'static,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     fn write_narinfo(
@@ -89,22 +94,32 @@ pub trait DrainProgressReporter {
 }
 
 pub trait Nix: Clone + Send + 'static {
-    type Error: Error + Send;
+    type PathInfosError: Error + Send;
+    type StoreClosureError: Error + Send;
+    type WriteNarError: Error + Send;
 
-    fn get_narinfo(
+    fn get_nar_hash(
         &mut self,
         store_path: &NixStorePath<StoreDir>,
-    ) -> impl Future<Output = Result<NarInfo<SmolStr, StoreDir>, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Nix32Digest<32>, Self::PathInfosError>> + Send;
 
-    fn pack_nar(
+    fn get_nar_size(
         &mut self,
         store_path: &NixStorePath<StoreDir>,
-    ) -> impl Future<Output = Result<(Bytes, NarFileName), Self::Error>> + Send;
+    ) -> impl Future<Output = Result<NonZeroU64, Self::PathInfosError>> + Send;
 
     fn store_closure(
         &mut self,
         store_path: &NixStorePath<StoreDir>,
-    ) -> impl Future<Output = Result<Vec<NixStorePath<StoreDir>>, Self::Error>> + Send;
+    ) -> impl Future<
+        Output = Result<Vec<NixStorePath<StoreDir>>, Self::StoreClosureError>,
+    > + Send;
+
+    fn write_nar(
+        &mut self,
+        store_path: &NixStorePath<StoreDir>,
+        writer: impl AsyncWrite + Send,
+    ) -> impl Future<Output = Result<(), Self::WriteNarError>> + Send;
 }
 
 pub trait Spawner {

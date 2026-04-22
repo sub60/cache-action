@@ -26,8 +26,10 @@ impl Cache for NoopCache {
     async fn write_nar(
         &self,
         _: nix_types::NarFileName,
-        _: bytes::Bytes,
+        nar_bytes: impl futures::AsyncRead + Send + 'static,
     ) -> Result<(), Self::Error> {
+        let mut sink = futures::io::sink();
+        futures::io::copy(nar_bytes, &mut sink).await.expect("never fails");
         Ok(())
     }
 
