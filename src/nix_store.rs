@@ -1,5 +1,4 @@
 use core::ffi::CStr;
-use core::fmt;
 use core::pin::pin;
 use std::io;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
@@ -9,12 +8,7 @@ use std::path::{Path, PathBuf};
 use async_compat::Compat;
 use either::Either;
 use nix_compat::nar::writer::r#async as nar_writer;
-use nix_types::{
-    Nix32Digest,
-    NixHashFromStrError,
-    NixStoreBaseName,
-    NixStorePath,
-};
+use nix_types::{Nix32Digest, NixStoreBaseName, NixStorePath};
 use nixb::store::GetFsClosureOpts;
 use tokio::fs;
 use tokio::io::{AsyncWriteExt as _, BufReader};
@@ -27,14 +21,6 @@ pub(crate) struct NixStore {
     store: nixb::store::Store,
 }
 
-#[derive(Debug)]
-pub(crate) enum NixStoreError {
-    InvalidContentAddress(nix_types::ContentAddressFromStrError),
-    InvalidNarHash(NixHashFromStrError),
-    Io(io::Error),
-    Nix(nixb::Error),
-}
-
 impl NixStore {
     pub(crate) fn open() -> nixb::Result<Self> {
         let mut ctx = nixb::contexts::c_context::CContext::create();
@@ -45,7 +31,7 @@ impl NixStore {
 }
 
 impl context::Nix for NixStore {
-    type Error = NixStoreError;
+    type Error = nixb::Error;
 
     async fn get_nar_hash(
         &mut self,
@@ -108,7 +94,7 @@ impl context::Nix for NixStore {
             GetFsClosureOpts::default(),
         )?;
 
-        res.map_err(Into::into)
+        res
     }
 }
 
@@ -156,54 +142,4 @@ async fn read_dir_entries(path: &Path) -> io::Result<Vec<(Vec<u8>, PathBuf)>> {
 
     entries.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
     Ok(entries)
-}
-
-impl fmt::Display for NixStoreError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidContentAddress(error) => {
-                write!(f, "couldn't parse content address: {error}")
-            },
-            Self::InvalidNarHash(error) => {
-                write!(f, "couldn't parse NAR hash: {error}")
-            },
-            Self::Io(error) => error.fmt(f),
-            Self::Nix(error) => error.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for NixStoreError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::InvalidContentAddress(error) => Some(error),
-            Self::InvalidNarHash(error) => Some(error),
-            Self::Io(error) => Some(error),
-            Self::Nix(error) => Some(error),
-        }
-    }
-}
-
-impl From<nix_types::ContentAddressFromStrError> for NixStoreError {
-    fn from(value: nix_types::ContentAddressFromStrError) -> Self {
-        Self::InvalidContentAddress(value)
-    }
-}
-
-impl From<NixHashFromStrError> for NixStoreError {
-    fn from(value: NixHashFromStrError) -> Self {
-        Self::InvalidNarHash(value)
-    }
-}
-
-impl From<io::Error> for NixStoreError {
-    fn from(value: io::Error) -> Self {
-        Self::Io(value)
-    }
-}
-
-impl From<nixb::Error> for NixStoreError {
-    fn from(value: nixb::Error) -> Self {
-        Self::Nix(value)
-    }
 }
