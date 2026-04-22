@@ -1,4 +1,5 @@
 use core::ffi::CStr;
+use core::num::NonZeroU64;
 use core::pin::pin;
 use std::ffi::OsString;
 use std::io;
@@ -29,6 +30,18 @@ impl NixStore {
         let store = nixb::store::Store::open(init, c"", [], ctx)?;
         Ok(Self { store })
     }
+
+    fn parse_path(
+        &mut self,
+        store_path: &NixStorePath<StoreDir>,
+    ) -> nixb::Result<nixb::store::StorePath> {
+        let mut bytes = store_path.to_string().into_bytes();
+        bytes.push(0);
+        // SAFETY: we just pushed a trailing NUL byte, and both the StoreDir and
+        // the store basename are guaranteed to not contain any interior NULs.
+        let cstr = unsafe { CStr::from_bytes_with_nul_unchecked(&bytes) };
+        self.store.parse_path(cstr)
+    }
 }
 
 impl context::Nix for NixStore {
@@ -36,9 +49,27 @@ impl context::Nix for NixStore {
 
     async fn get_nar_hash(
         &mut self,
-        _store_path: &NixStorePath<StoreDir>,
+        store_path: &NixStorePath<StoreDir>,
     ) -> Result<Nix32Digest<32>, Self::Error> {
-        todo!()
+        let path = self.parse_path(store_path)?;
+        self.store.query_path_info(&path)?.with_nar_hash(|hash| {
+            hash.strip_prefix("sha256:")
+                .expect("Nix nar hashes are always sha256")
+                .parse()
+                .expect("Nix nar hashes must use valid nix base32")
+        })
+    }
+
+    async fn get_nar_size(
+        &mut self,
+        store_path: &NixStorePath<StoreDir>,
+    ) -> Result<NonZeroU64, Self::Error> {
+        let path = self.parse_path(store_path)?;
+        self.store.query_path_info(&path)?.get_nar_size()?.ok_or_else(|| {
+            nixb::Error::from_message(format_args!(
+                "unknown NAR size for {store_path}"
+            ))
+        })
     }
 
     async fn write_nar(
@@ -57,17 +88,7 @@ impl context::Nix for NixStore {
         &mut self,
         store_path: &NixStorePath<StoreDir>,
     ) -> Result<Vec<NixStorePath<StoreDir>>, Self::Error> {
-        let mut store_path_bytes = store_path.to_string().into_bytes();
-        store_path_bytes.push(0);
-
-        // SAFETY: we just pushed a trailing NUL byte, and both the StoreDir and
-        // the store basename are guaranteed to not contain any interior NULs.
-        let store_path_cstr =
-            unsafe { CStr::from_bytes_with_nul_unchecked(&store_path_bytes) };
-
-        let store_dir = store_path.store_dir();
-
-        let store_path = self.store.parse_path(store_path_cstr)?;
+        let path = self.parse_path(store_path)?;
 
         let mut res = Ok(vec![]);
 
@@ -84,13 +105,12 @@ impl context::Nix for NixStore {
                 hash: Nix32Digest::new(&hash),
                 name: path.with_name(|n| n.parse()).expect("valid store name"),
             };
-            let store_path =
-                NixStorePath::new(basename).with_store_dir(store_dir.clone());
-            paths.push(store_path);
+            let store_dir = store_path.store_dir().clone();
+            paths.push(NixStorePath::new(basename).with_store_dir(store_dir));
         };
 
         self.store.get_fs_closure(
-            &store_path,
+            &path,
             push_path,
             GetFsClosureOpts::default(),
         )?;

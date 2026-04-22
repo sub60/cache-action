@@ -1,5 +1,6 @@
 use core::error::Error;
 use core::fmt;
+use core::num::NonZeroU64;
 use std::io;
 
 use either::Either;
@@ -101,6 +102,11 @@ pub trait Nix: Clone + Send + 'static {
         &mut self,
         store_path: &NixStorePath<StoreDir>,
     ) -> impl Future<Output = Result<Nix32Digest<32>, Self::Error>> + Send;
+
+    fn get_nar_size(
+        &mut self,
+        store_path: &NixStorePath<StoreDir>,
+    ) -> impl Future<Output = Result<NonZeroU64, Self::Error>> + Send;
 
     fn store_closure(
         &mut self,

@@ -1,5 +1,4 @@
 use core::fmt;
-use core::num::NonZero;
 use core::pin::pin;
 use std::collections::HashSet;
 
@@ -73,7 +72,7 @@ pub(crate) enum HandlePathOutcome {
 pub(crate) enum HandlePathError<C: Cache, N: Nix> {
     CheckHasNar(C::Error),
     CheckHasNarInfo(C::Error),
-    GetNarHash(N::Error),
+    GetPathInfos(N::Error),
     WriteNarFromStore(N::Error),
     WriteNarInfo(C::Error),
     WriteNarToCache(C::Error),
@@ -215,7 +214,7 @@ async fn handle_store_path<C: Cache, N: Nix>(
     let nar_hash = nix
         .get_nar_hash(store_path)
         .await
-        .map_err(HandlePathError::GetNarHash)?;
+        .map_err(HandlePathError::GetPathInfos)?;
 
     let nar_filename = NarFileName { file_hash: nar_hash, extension: None };
 
@@ -223,8 +222,6 @@ async fn handle_store_path<C: Cache, N: Nix>(
         .has_nar(&nar_filename)
         .await
         .map_err(HandlePathError::CheckHasNar)?;
-
-    let mut nar_size = 0;
 
     // Just like `nix copy --to`, we write the NAR *before* the NARInfo to avoid
     // the cache server temporarily reporting false positives.
@@ -252,7 +249,10 @@ async fn handle_store_path<C: Cache, N: Nix>(
         })?;
     }
 
-    let nar_size = NonZero::new(nar_size).expect("NARs are never empty");
+    let nar_size = nix
+        .get_nar_size(store_path)
+        .await
+        .map_err(HandlePathError::GetPathInfos)?;
 
     let narinfo = NarInfo {
         store_path: store_path.clone(),
@@ -326,7 +326,7 @@ impl<C: Cache, N: Nix> fmt::Display for HandlePathError<C, N> {
                     "couldn't check NARInfo existence on remote cache: {err}"
                 )
             },
-            Self::GetNarHash(err) => {
+            Self::GetPathInfos(err) => {
                 write!(f, "couldn't get NAR hash: {err}")
             },
             Self::WriteNarFromStore(err) => {
