@@ -20,6 +20,7 @@ use crate::context::{
     JoinHandle,
     Nix,
     Spawner,
+    StorePathInfos,
 };
 use crate::protocol::{self, StoreDir};
 
@@ -210,10 +211,13 @@ async fn handle_store_path<C: Cache, N: Nix>(
         return Ok(HandlePathOutcome::Skipped);
     }
 
-    let nar_hash = nix
-        .get_nar_hash(store_path)
+    let mut path_infos = nix
+        .get_path_infos(store_path)
         .await
         .map_err(HandlePathError::GetPathInfos)?;
+
+    let nar_hash =
+        path_infos.nar_hash().map_err(HandlePathError::GetPathInfos)?;
 
     let nar_filename = NarFileName { file_hash: nar_hash, extension: None };
 
@@ -237,10 +241,8 @@ async fn handle_store_path<C: Cache, N: Nix>(
         cache_res.map_err(HandlePathError::WriteNarToCache)?;
     }
 
-    let nar_size = nix
-        .get_nar_size(store_path)
-        .await
-        .map_err(HandlePathError::GetPathInfos)?;
+    let nar_size =
+        path_infos.nar_size().map_err(HandlePathError::GetPathInfos)?;
 
     let narinfo = NarInfo {
         store_path: store_path.clone(),

@@ -44,33 +44,18 @@ impl NixStore {
 }
 
 impl context::Nix for NixStore {
+    type PathInfos<'a> = nixb::store::PathInfo;
+
     type PathInfosError = nixb::Error;
     type StoreClosureError = nixb::Error;
     type WriteNarError = io::Error;
 
-    async fn get_nar_hash(
+    async fn get_path_infos<'a>(
         &mut self,
-        store_path: &NixStorePath<StoreDir>,
-    ) -> Result<Nix32Digest<32>, Self::PathInfosError> {
+        store_path: &'a NixStorePath<StoreDir>,
+    ) -> Result<Self::PathInfos<'a>, Self::PathInfosError> {
         let path = self.parse_path(store_path)?;
-        self.store.query_path_info(&path)?.with_nar_hash(|hash| {
-            hash.strip_prefix("sha256:")
-                .expect("Nix nar hashes are always sha256")
-                .parse()
-                .expect("Nix nar hashes must use valid nix base32")
-        })
-    }
-
-    async fn get_nar_size(
-        &mut self,
-        store_path: &NixStorePath<StoreDir>,
-    ) -> Result<NonZeroU64, Self::PathInfosError> {
-        let path = self.parse_path(store_path)?;
-        self.store.query_path_info(&path)?.get_nar_size()?.ok_or_else(|| {
-            nixb::Error::from_message(format_args!(
-                "unknown NAR size for {store_path}"
-            ))
-        })
+        self.store.query_path_info(&path)
     }
 
     async fn write_nar(
@@ -117,6 +102,24 @@ impl context::Nix for NixStore {
         )?;
 
         res
+    }
+}
+
+impl context::StorePathInfos for nixb::store::PathInfo {
+    type Error = nixb::Error;
+
+    fn nar_hash(&mut self) -> Result<Nix32Digest<32>, Self::Error> {
+        self.with_nar_hash(|hash| {
+            hash.strip_prefix("sha256:")
+                .expect("Nix nar hashes are always sha256")
+                .parse()
+                .expect("Nix nar hashes must use valid nix base32")
+        })
+    }
+
+    fn nar_size(&mut self) -> Result<NonZeroU64, Self::Error> {
+        self.get_nar_size()?
+            .ok_or_else(|| nixb::Error::from_message("unknown NAR size"))
     }
 }
 

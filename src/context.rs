@@ -94,19 +94,18 @@ pub trait DrainProgressReporter {
 }
 
 pub trait Nix: Clone + Send + 'static {
+    type PathInfos<'path>: StorePathInfos<Error = Self::PathInfosError> + Send;
+
     type PathInfosError: Error + Send;
     type StoreClosureError: Error + Send;
     type WriteNarError: Error + Send;
 
-    fn get_nar_hash(
+    fn get_path_infos<'path>(
         &mut self,
-        store_path: &NixStorePath<StoreDir>,
-    ) -> impl Future<Output = Result<Nix32Digest<32>, Self::PathInfosError>> + Send;
-
-    fn get_nar_size(
-        &mut self,
-        store_path: &NixStorePath<StoreDir>,
-    ) -> impl Future<Output = Result<NonZeroU64, Self::PathInfosError>> + Send;
+        store_path: &'path NixStorePath<StoreDir>,
+    ) -> impl Future<
+        Output = Result<Self::PathInfos<'path>, Self::PathInfosError>,
+    > + Send;
 
     fn store_closure(
         &mut self,
@@ -120,6 +119,14 @@ pub trait Nix: Clone + Send + 'static {
         store_path: &NixStorePath<StoreDir>,
         writer: impl AsyncWrite + Send,
     ) -> impl Future<Output = Result<(), Self::WriteNarError>> + Send;
+}
+
+pub trait StorePathInfos {
+    type Error: Error + Send;
+
+    fn nar_hash(&mut self) -> Result<Nix32Digest<32>, Self::Error>;
+
+    fn nar_size(&mut self) -> Result<NonZeroU64, Self::Error>;
 }
 
 pub trait Spawner {
