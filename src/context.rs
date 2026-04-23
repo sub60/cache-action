@@ -4,10 +4,13 @@ use core::num::NonZeroU64;
 
 use futures::{AsyncRead, AsyncWrite};
 use nix_types::{
+    ContentAddress,
     NarFileName,
     NarInfo,
     NarInfoFileName,
     Nix32Digest,
+    NixSignature,
+    NixStoreBaseName,
     NixStorePath,
 };
 
@@ -124,9 +127,23 @@ pub trait Nix: Clone + Send + 'static {
 pub trait StorePathInfos {
     type Error: Error + Send;
 
+    fn content_address(
+        &mut self,
+    ) -> Result<Option<ContentAddress>, Self::Error>;
+
+    fn deriver(&mut self) -> Result<Option<NixStoreBaseName>, Self::Error>;
+
     fn nar_hash(&mut self) -> Result<Nix32Digest<32>, Self::Error>;
 
     fn nar_size(&mut self) -> Result<NonZeroU64, Self::Error>;
+
+    fn references(
+        &mut self,
+    ) -> Result<impl IntoIterator<Item = NixStoreBaseName>, Self::Error>;
+
+    fn signatures(
+        &mut self,
+    ) -> Result<impl IntoIterator<Item = NixSignature>, Self::Error>;
 }
 
 pub trait Spawner {

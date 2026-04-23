@@ -241,8 +241,26 @@ async fn handle_store_path<C: Cache, N: Nix>(
         cache_res.map_err(HandlePathError::WriteNarToCache)?;
     }
 
+    let content_address =
+        path_infos.content_address().map_err(HandlePathError::GetPathInfos)?;
+
+    let deriver =
+        path_infos.deriver().map_err(HandlePathError::GetPathInfos)?;
+
     let nar_size =
         path_infos.nar_size().map_err(HandlePathError::GetPathInfos)?;
+
+    let references = path_infos
+        .references()
+        .map_err(HandlePathError::GetPathInfos)?
+        .into_iter()
+        .collect();
+
+    let signatures = path_infos
+        .signatures()
+        .map_err(HandlePathError::GetPathInfos)?
+        .into_iter()
+        .collect();
 
     let narinfo = NarInfo {
         store_path: store_path.clone(),
@@ -252,10 +270,10 @@ async fn handle_store_path<C: Cache, N: Nix>(
         file_size: nar_size,
         nar_hash,
         nar_size,
-        references: Default::default(),
-        deriver: Default::default(),
-        signatures: Default::default(),
-        content_address: Default::default(),
+        references,
+        deriver,
+        signatures,
+        content_address,
     };
 
     let narinfo_size = cache

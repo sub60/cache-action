@@ -1,5 +1,6 @@
 use core::ffi::CStr;
 use core::num::NonZeroU64;
+use core::ops::ControlFlow;
 use core::pin::pin;
 use std::ffi::OsString;
 use std::io;
@@ -9,8 +10,15 @@ use std::path::Path;
 
 use async_compat::Compat;
 use nix_compat::nar::writer::r#async as nar_writer;
-use nix_types::{Nix32Digest, NixStoreBaseName, NixStorePath};
+use nix_types::{
+    ContentAddress,
+    Nix32Digest,
+    NixSignature,
+    NixStoreBaseName,
+    NixStorePath,
+};
 use nixb::store::GetFsClosureOpts;
+use smallvec::SmallVec;
 use tokio::fs;
 use tokio::io::{AsyncWriteExt as _, BufReader};
 
@@ -20,6 +28,10 @@ use crate::protocol::StoreDir;
 #[derive(Clone)]
 pub(crate) struct NixStore {
     store: nixb::store::Store,
+}
+
+trait StorePathExt {
+    fn basename(&self) -> nixb::Result<NixStoreBaseName>;
 }
 
 impl NixStore {
@@ -80,16 +92,12 @@ impl context::Nix for NixStore {
 
         let push_path = |path: &nixb::store::StorePath| {
             let Ok(paths) = &mut res else { return };
-            let hash = match path.hash() {
-                Ok(hash) => hash,
+            let basename = match path.basename() {
+                Ok(basename) => basename,
                 Err(err) => {
                     res = Err(err);
                     return;
                 },
-            };
-            let basename = NixStoreBaseName {
-                hash: Nix32Digest::new(&hash),
-                name: path.with_name(|n| n.parse()).expect("valid store name"),
             };
             let store_dir = store_path.store_dir().clone();
             paths.push(NixStorePath::new(basename).with_store_dir(store_dir));
@@ -108,6 +116,24 @@ impl context::Nix for NixStore {
 impl context::StorePathInfos for nixb::store::PathInfo {
     type Error = nixb::Error;
 
+    fn content_address(
+        &mut self,
+    ) -> Result<Option<ContentAddress>, Self::Error> {
+        self.with_ca(|ca| {
+            ca.parse().map_err(|err| {
+                nixb::Error::from_message(format_args!(
+                    "couldn't parse {ca:?} into a CA: {err}"
+                ))
+            })
+        })?
+        .transpose()
+    }
+
+    fn deriver(&mut self) -> Result<Option<NixStoreBaseName>, Self::Error> {
+        let Some(store_path) = self.get_deriver()? else { return Ok(None) };
+        store_path.basename().map(Some)
+    }
+
     fn nar_hash(&mut self) -> Result<Nix32Digest<32>, Self::Error> {
         self.with_nar_hash(|hash| {
             hash.strip_prefix("sha256:")
@@ -121,6 +147,76 @@ impl context::StorePathInfos for nixb::store::PathInfo {
         self.get_nar_size()?
             .ok_or_else(|| nixb::Error::from_message("unknown NAR size"))
     }
+
+    fn references(
+        &mut self,
+    ) -> Result<SmallVec<[NixStoreBaseName; 2]>, Self::Error> {
+        let mut references = SmallVec::new();
+
+        let control_flow =
+            self.with_references(|store_path| match store_path.basename() {
+                Ok(basename) => {
+                    references.push(basename);
+                    ControlFlow::Continue(())
+                },
+                Err(err) => ControlFlow::Break(err),
+            })?;
+
+        match control_flow {
+            ControlFlow::Continue(()) => Ok(references),
+            ControlFlow::Break(err) => Err(err),
+        }
+    }
+
+    fn signatures(
+        &mut self,
+    ) -> Result<SmallVec<[NixSignature; 2]>, Self::Error> {
+        let mut signatures = SmallVec::new();
+
+        let control_flow = self.with_sigs(|sig_bytes| {
+            match signature_from_bytes(sig_bytes) {
+                Ok(signature) => {
+                    signatures.push(signature);
+                    ControlFlow::Continue(())
+                },
+                Err(err) => ControlFlow::Break(err),
+            }
+        })?;
+
+        match control_flow {
+            ControlFlow::Continue(()) => Ok(signatures),
+            ControlFlow::Break(err) => Err(err),
+        }
+    }
+}
+
+impl StorePathExt for nixb::store::StorePath {
+    fn basename(&self) -> nixb::Result<NixStoreBaseName> {
+        let hash = self.hash()?;
+        let name = self.with_name(|name| {
+            name.parse().map_err(|err| {
+                nixb::Error::from_message(format_args!(
+                    "couldn't parse {name:?} into a store name: {err}"
+                ))
+            })
+        })?;
+        Ok(NixStoreBaseName { hash: Nix32Digest::new(&hash), name })
+    }
+}
+
+fn signature_from_bytes(bytes: &[u8]) -> nixb::Result<NixSignature> {
+    let sig_str = str::from_utf8(bytes).map_err(|_err| {
+        nixb::Error::from_message(format_args!(
+            "signature is not valid UTF-8: {:?}",
+            String::from_utf8_lossy(bytes)
+        ))
+    })?;
+
+    sig_str.parse().map_err(|err| {
+        nixb::Error::from_message(format_args!(
+            "couldn't parse {sig_str:?} into signature: {err}",
+        ))
+    })
 }
 
 async fn write_nar(
