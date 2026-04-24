@@ -1,4 +1,5 @@
 use core::fmt::{self, Write};
+use core::num::NonZeroU64;
 
 use either::Either;
 use futures::{AsyncWrite, AsyncWriteExt};
@@ -38,17 +39,17 @@ impl<W: AsyncWrite + Unpin> context::DrainProgressReporter
         self.reported_paths_left_to_handle = true;
     }
 
-    async fn report_path_handling_outcome(
+    async fn report_path_pushed(
         &mut self,
         path: &NixStorePath<StoreDir>,
-        outcome: &event_loop::HandlePathOutcome,
+        _: NonZeroU64,
     ) {
-        let verb = match outcome {
-            event_loop::HandlePathOutcome::PushedNarAndNarInfo { .. }
-            | event_loop::HandlePathOutcome::PushedNarInfo { .. } => "Pushed",
-            event_loop::HandlePathOutcome::Skipped => "Skipped",
-        };
-        let msg = format!("{verb} {path}\n",);
+        let msg = format!("Pushed {path}\n",);
+        let _ = self.writer.write_all(msg.as_bytes()).await;
+    }
+
+    async fn report_path_skipped(&mut self, path: &NixStorePath<StoreDir>) {
+        let msg = format!("Skipped {path}\n",);
         let _ = self.writer.write_all(msg.as_bytes()).await;
     }
 

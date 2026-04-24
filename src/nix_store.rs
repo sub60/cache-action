@@ -1,5 +1,4 @@
 use core::ffi::CStr;
-use core::num::NonZeroU64;
 use core::ops::ControlFlow;
 use core::pin::pin;
 use std::ffi::OsString;
@@ -132,20 +131,6 @@ impl context::StorePathInfos for nixb::store::PathInfo {
     fn deriver(&mut self) -> Result<Option<NixStoreBaseName>, Self::Error> {
         let Some(store_path) = self.get_deriver()? else { return Ok(None) };
         store_path.basename().map(Some)
-    }
-
-    fn nar_hash(&mut self) -> Result<Nix32Digest<32>, Self::Error> {
-        self.with_nar_hash(|hash| {
-            hash.strip_prefix("sha256:")
-                .expect("Nix nar hashes are always sha256")
-                .parse()
-                .expect("Nix nar hashes must use valid nix base32")
-        })
-    }
-
-    fn nar_size(&mut self) -> Result<NonZeroU64, Self::Error> {
-        self.get_nar_size()?
-            .ok_or_else(|| nixb::Error::from_message("unknown NAR size"))
     }
 
     fn references(

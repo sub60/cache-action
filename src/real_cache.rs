@@ -70,29 +70,8 @@ impl RealCache {
 }
 
 impl context::Cache for RealCache {
+    type NarUploadId = ();
     type Error = CacheRequestError;
-
-    async fn has_nar(
-        &self,
-        nar_filename: &NarFileName,
-    ) -> Result<bool, Self::Error> {
-        let response = self
-            .client
-            .head(self.nar_url(nar_filename))
-            .send()
-            .await
-            .map_err(CacheRequestError::Request)?;
-
-        match response.status() {
-            StatusCode::OK => Ok(true),
-            StatusCode::NOT_FOUND => Ok(false),
-            status => Err(CacheRequestError::UnexpectedResponse {
-                method: Method::HEAD,
-                status,
-                url: self.nar_url(nar_filename),
-            }),
-        }
-    }
 
     async fn has_narinfo(
         &self,
@@ -116,41 +95,28 @@ impl context::Cache for RealCache {
         }
     }
 
-    async fn write_nar(
+    async fn create_nar_upload_id(
         &self,
-        nar_filename: NarFileName,
-        nar_bytes: impl AsyncRead + Send + 'static,
-    ) -> Result<(), Self::Error> {
-        let body = reqwest::Body::wrap_stream(ReaderStream::with_capacity(
-            Compat::new(nar_bytes),
-            64 * 1024,
-        ));
-
-        let response = self
-            .client
-            .put(self.nar_url(&nar_filename))
-            .body(body)
-            .send()
-            .await
-            .map_err(CacheRequestError::Request)?;
-
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            Err(CacheRequestError::UnexpectedResponse {
-                method: Method::PUT,
-                status: response.status(),
-                url: self.nar_url(&nar_filename),
-            })
-        }
+        _: &nix_types::NarInfoFileName,
+    ) -> Result<Self::NarUploadId, Self::Error> {
+        todo!();
     }
 
-    async fn write_narinfo(
+    async fn upload_nar(
+        &self,
+        _: &Self::NarUploadId,
+        _nar_bytes: impl AsyncRead + Send + 'static,
+    ) -> Result<(), Self::Error> {
+        todo!();
+    }
+
+    async fn upload_narinfo(
         &self,
         narinfo_filename: NarInfoFileName,
-        narinfo: NarInfo<impl fmt::Display, StoreDir>,
+        narinfo: NarInfo<(), StoreDir>,
+        _: Self::NarUploadId,
     ) -> Result<u64, Self::Error> {
-        let narinfo = narinfo.to_string();
+        let narinfo = narinfo.with_url("").to_string();
         let narinfo_size = narinfo.len() as u64;
         let response = self
             .client

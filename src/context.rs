@@ -1,14 +1,11 @@
 use core::error::Error;
-use core::fmt;
 use core::num::NonZeroU64;
 
 use futures::{AsyncRead, AsyncWrite};
 use nix_types::{
     ContentAddress,
-    NarFileName,
     NarInfo,
     NarInfoFileName,
-    Nix32Digest,
     NixSignature,
     NixStoreBaseName,
     NixStorePath,
@@ -18,57 +15,48 @@ use crate::event_loop;
 use crate::protocol::{self, StoreDir};
 
 pub trait Context {
-    /// TODO: docs.
     type Cache: Cache;
-
-    /// TODO: docs.
     type DrainProgressReporter<W: AsyncWrite + Unpin>: DrainProgressReporter;
-
-    /// TODO: docs.
     type Nix: Nix;
-
-    /// TODO: docs.
     type Spawner: Spawner;
 
-    /// TODO: docs.
     fn handle_rx_error(&mut self, rx_error: protocol::ReceiveError);
 
-    /// TODO: docs.
     fn new_drain_progress_reporter<W: AsyncWrite + Unpin>(
         &mut self,
         writer: W,
     ) -> Self::DrainProgressReporter<W>;
 
-    /// TODO: docs.
     fn nix(&self) -> &Self::Nix;
 
-    /// TODO: docs.
     fn spawner(&self) -> &Self::Spawner;
 }
 
 pub trait Cache: Clone + Send + 'static {
+    type NarUploadId: Send + Sync;
     type Error: Error + Send;
-
-    fn has_nar(
-        &self,
-        nar_filename: &NarFileName,
-    ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 
     fn has_narinfo(
         &self,
         narinfo_filename: &NarInfoFileName,
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 
-    fn write_nar(
+    fn create_nar_upload_id(
         &self,
-        nar_filename: NarFileName,
+        narinfo_filename: &NarInfoFileName,
+    ) -> impl Future<Output = Result<Self::NarUploadId, Self::Error>> + Send;
+
+    fn upload_nar(
+        &self,
+        upload_id: &Self::NarUploadId,
         nar_bytes: impl AsyncRead + Send + 'static,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
-    fn write_narinfo(
+    fn upload_narinfo(
         &self,
         narinfo_filename: NarInfoFileName,
-        narinfo: NarInfo<impl fmt::Display + Send, StoreDir>,
+        narinfo: NarInfo<(), StoreDir>,
+        upload_id: Self::NarUploadId,
     ) -> impl Future<Output = Result<u64, Self::Error>> + Send;
 }
 
@@ -78,10 +66,15 @@ pub trait DrainProgressReporter {
         num_paths_left_to_handle: u32,
     ) -> impl Future<Output = ()>;
 
-    fn report_path_handling_outcome(
+    fn report_path_pushed(
         &mut self,
         path: &NixStorePath<StoreDir>,
-        outcome: &event_loop::HandlePathOutcome,
+        num_bytes: NonZeroU64,
+    ) -> impl Future<Output = ()>;
+
+    fn report_path_skipped(
+        &mut self,
+        path: &NixStorePath<StoreDir>,
     ) -> impl Future<Output = ()>;
 
     fn report_path_handling_error<C: Cache, N: Nix>(
@@ -132,10 +125,6 @@ pub trait StorePathInfos {
     ) -> Result<Option<ContentAddress>, Self::Error>;
 
     fn deriver(&mut self) -> Result<Option<NixStoreBaseName>, Self::Error>;
-
-    fn nar_hash(&mut self) -> Result<Nix32Digest<32>, Self::Error>;
-
-    fn nar_size(&mut self) -> Result<NonZeroU64, Self::Error>;
 
     fn references(
         &mut self,
