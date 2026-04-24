@@ -3,7 +3,7 @@ use std::sync::LazyLock;
 
 use async_compat::Compat;
 use futures::AsyncRead;
-use nix_types::{CacheName, NarFileName, NarInfo, NarInfoFileName, UserName};
+use nix_types::{CacheName, NarInfo, NarInfoFileName, UserName};
 use reqwest::{Method, StatusCode};
 use tokio_util::io::ReaderStream;
 
@@ -14,7 +14,7 @@ static SUB60_CACHE_URL: LazyLock<url::Url> =
     LazyLock::new(|| "https://cache.sub60.dev".parse().expect("valid URL"));
 
 #[derive(Clone)]
-pub(crate) struct RealCache {
+pub(crate) struct Sub60Cache {
     cache_url: url::Url,
     client: reqwest::Client,
 }
@@ -30,7 +30,7 @@ pub(crate) enum CacheRequestError {
     UnexpectedResponse { method: Method, status: StatusCode, url: url::Url },
 }
 
-impl RealCache {
+impl Sub60Cache {
     /// TODO: docs.
     pub(crate) async fn connect(
         owner: UserName,
@@ -51,15 +51,6 @@ impl RealCache {
         Ok(Self { cache_url, client })
     }
 
-    fn nar_url(&self, nar_filename: &NarFileName) -> url::Url {
-        let mut url = self.cache_url.clone();
-        url.path_segments_mut()
-            .expect("cache URL can be a base")
-            .push("nar")
-            .push(&nar_filename.to_string());
-        url
-    }
-
     fn narinfo_url(&self, narinfo_filename: &NarInfoFileName) -> url::Url {
         let mut url = self.cache_url.clone();
         url.path_segments_mut()
@@ -69,7 +60,7 @@ impl RealCache {
     }
 }
 
-impl context::Cache for RealCache {
+impl context::Cache for Sub60Cache {
     type NarUploadId = ();
     type Error = CacheRequestError;
 

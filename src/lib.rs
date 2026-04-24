@@ -9,11 +9,11 @@ mod nix_store;
 mod noop_cache;
 mod protocol;
 mod push;
-#[cfg(not(feature = "noop-cache"))]
-mod real_cache;
 mod real_context;
 mod real_drain_progress_reporter;
 mod start;
+#[cfg(feature = "sub60-cache")]
+mod sub60_cache;
 mod tokio;
 
 type AuthToken = String;

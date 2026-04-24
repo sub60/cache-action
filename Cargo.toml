@@ -5,6 +5,7 @@ edition = "2024"
 
 [features]
 noop-cache = []
+sub60-cache = []
 
 [dependencies]
 async-compat = "0.2"

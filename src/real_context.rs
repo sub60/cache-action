@@ -19,8 +19,8 @@ impl RealContext {
 impl context::Context for RealContext {
     #[cfg(feature = "noop-cache")]
     type Cache = crate::noop_cache::NoopCache;
-    #[cfg(not(feature = "noop-cache"))]
-    type Cache = crate::real_cache::RealCache;
+    #[cfg(feature = "sub60-cache")]
+    type Cache = crate::sub60_cache::Sub60Cache;
     type DrainProgressReporter<W: AsyncWrite + Unpin> =
         RealDrainProgressReporter<W>;
     type Nix = NixStore;

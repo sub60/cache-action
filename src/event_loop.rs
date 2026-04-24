@@ -261,28 +261,27 @@ async fn handle_store_path<C: Cache, N: Nix>(
     let nar_size = NonZeroU64::new(writer.num_bytes_written)
         .ok_or(HandlePathError::WriteNarWroteZeroBytes)?;
 
-    let mut path_infos = nix
+    let mut infos = nix
         .get_path_infos(store_path)
         .await
         .map_err(HandlePathError::GetPathInfos)?;
 
-    let content_address =
-        path_infos.content_address().map_err(HandlePathError::GetPathInfos)?;
-
-    let deriver =
-        path_infos.deriver().map_err(HandlePathError::GetPathInfos)?;
-
-    let references = path_infos
+    let references = infos
         .references()
         .map_err(HandlePathError::GetPathInfos)?
         .into_iter()
         .collect();
 
-    let signatures = path_infos
+    let deriver = infos.deriver().map_err(HandlePathError::GetPathInfos)?;
+
+    let signatures = infos
         .signatures()
         .map_err(HandlePathError::GetPathInfos)?
         .into_iter()
         .collect();
+
+    let content_address =
+        infos.content_address().map_err(HandlePathError::GetPathInfos)?;
 
     let narinfo = NarInfo {
         store_path: store_path.clone(),
