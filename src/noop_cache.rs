@@ -10,7 +10,7 @@ use crate::protocol::StoreDir;
 pub(crate) struct NoopCache {}
 
 impl Cache for NoopCache {
-    type NarUploadId = ();
+    type NarUploadState = ();
     type Error = Infallible;
 
     async fn has_narinfo(
@@ -20,16 +20,16 @@ impl Cache for NoopCache {
         Ok(false)
     }
 
-    async fn create_nar_upload_id(
+    async fn initiate_nar_upload(
         &self,
         _: &NarInfoFileName,
-    ) -> Result<Self::NarUploadId, Self::Error> {
+    ) -> Result<Self::NarUploadState, Self::Error> {
         Ok(())
     }
 
     async fn upload_nar(
         &self,
-        (): &Self::NarUploadId,
+        (): &mut Self::NarUploadState,
         nar_bytes: impl AsyncRead + Send + 'static,
     ) -> Result<(), Self::Error> {
         let mut sink = futures::io::sink();
@@ -41,7 +41,7 @@ impl Cache for NoopCache {
         &self,
         _: NarInfoFileName,
         narinfo: NarInfo<(), StoreDir>,
-        (): Self::NarUploadId,
+        (): Self::NarUploadState,
     ) -> Result<u64, Self::Error> {
         Ok(narinfo.with_url("").to_string().len() as u64)
     }

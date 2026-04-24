@@ -235,8 +235,8 @@ async fn handle_store_path<C: Cache, N: Nix>(
         return Ok(None);
     }
 
-    let nar_upload_id = cache
-        .create_nar_upload_id(&narinfo_filename)
+    let mut nar_upload_state = cache
+        .initiate_nar_upload(&narinfo_filename)
         .await
         .map_err(HandlePathError::CreateNarUploadId)?;
 
@@ -249,7 +249,7 @@ async fn handle_store_path<C: Cache, N: Nix>(
 
     let (nix_res, cache_res) = future::join(
         nix.write_nar(store_path, &mut writer),
-        cache.upload_nar(&nar_upload_id, Compat::new(reader)),
+        cache.upload_nar(&mut nar_upload_state, Compat::new(reader)),
     )
     .await;
 
@@ -298,7 +298,7 @@ async fn handle_store_path<C: Cache, N: Nix>(
     };
 
     let narinfo_size = cache
-        .upload_narinfo(narinfo_filename, narinfo, nar_upload_id)
+        .upload_narinfo(narinfo_filename, narinfo, nar_upload_state)
         .await
         .map_err(HandlePathError::UploadNarInfo)?;
 

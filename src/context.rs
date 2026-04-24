@@ -33,7 +33,7 @@ pub trait Context {
 }
 
 pub trait Cache: Clone + Send + 'static {
-    type NarUploadId: Send + Sync;
+    type NarUploadState: Send;
     type Error: Error + Send;
 
     fn has_narinfo(
@@ -41,14 +41,14 @@ pub trait Cache: Clone + Send + 'static {
         narinfo_filename: &NarInfoFileName,
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 
-    fn create_nar_upload_id(
+    fn initiate_nar_upload(
         &self,
         narinfo_filename: &NarInfoFileName,
-    ) -> impl Future<Output = Result<Self::NarUploadId, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Self::NarUploadState, Self::Error>> + Send;
 
     fn upload_nar(
         &self,
-        upload_id: &Self::NarUploadId,
+        upload_state: &mut Self::NarUploadState,
         nar_bytes: impl AsyncRead + Send + 'static,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
@@ -56,7 +56,7 @@ pub trait Cache: Clone + Send + 'static {
         &self,
         narinfo_filename: NarInfoFileName,
         narinfo: NarInfo<(), StoreDir>,
-        upload_id: Self::NarUploadId,
+        nar_upload_state: Self::NarUploadState,
     ) -> impl Future<Output = Result<u64, Self::Error>> + Send;
 }
 

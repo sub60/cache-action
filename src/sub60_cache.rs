@@ -61,7 +61,7 @@ impl Sub60Cache {
 }
 
 impl context::Cache for Sub60Cache {
-    type NarUploadId = ();
+    type NarUploadState = ();
     type Error = CacheRequestError;
 
     async fn has_narinfo(
@@ -86,16 +86,16 @@ impl context::Cache for Sub60Cache {
         }
     }
 
-    async fn create_nar_upload_id(
+    async fn initiate_nar_upload(
         &self,
         _: &nix_types::NarInfoFileName,
-    ) -> Result<Self::NarUploadId, Self::Error> {
+    ) -> Result<Self::NarUploadState, Self::Error> {
         todo!();
     }
 
     async fn upload_nar(
         &self,
-        _: &Self::NarUploadId,
+        _: &mut Self::NarUploadState,
         _nar_bytes: impl AsyncRead + Send + 'static,
     ) -> Result<(), Self::Error> {
         todo!();
@@ -105,7 +105,7 @@ impl context::Cache for Sub60Cache {
         &self,
         narinfo_filename: NarInfoFileName,
         narinfo: NarInfo<(), StoreDir>,
-        _: Self::NarUploadId,
+        _: Self::NarUploadState,
     ) -> Result<u64, Self::Error> {
         let narinfo = narinfo.with_url("").to_string();
         let narinfo_size = narinfo.len() as u64;
