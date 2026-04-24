@@ -12,9 +12,9 @@ use nix_compat::nar::writer::r#async as nar_writer;
 use nix_types::{
     ContentAddress,
     Nix32Digest,
-    NixSignature,
-    NixStoreBaseName,
-    NixStorePath,
+    Signature,
+    StoreBaseName,
+    StorePath,
 };
 use nixb::store::GetFsClosureOpts;
 use smallvec::SmallVec;
@@ -30,7 +30,7 @@ pub(crate) struct NixStore {
 }
 
 trait StorePathExt {
-    fn basename(&self) -> nixb::Result<NixStoreBaseName>;
+    fn basename(&self) -> nixb::Result<StoreBaseName>;
 }
 
 impl NixStore {
@@ -43,7 +43,7 @@ impl NixStore {
 
     fn parse_path(
         &mut self,
-        store_path: &NixStorePath<StoreDir>,
+        store_path: &StorePath<StoreDir>,
     ) -> nixb::Result<nixb::store::StorePath> {
         let mut bytes = store_path.to_string().into_bytes();
         bytes.push(0);
@@ -63,7 +63,7 @@ impl context::Nix for NixStore {
 
     async fn get_path_infos<'a>(
         &mut self,
-        store_path: &'a NixStorePath<StoreDir>,
+        store_path: &'a StorePath<StoreDir>,
     ) -> Result<Self::PathInfos<'a>, Self::PathInfosError> {
         let path = self.parse_path(store_path)?;
         self.store.query_path_info(&path)
@@ -71,7 +71,7 @@ impl context::Nix for NixStore {
 
     async fn write_nar(
         &mut self,
-        store_path: &NixStorePath<StoreDir>,
+        store_path: &StorePath<StoreDir>,
         writer: impl futures::AsyncWrite + Send,
     ) -> Result<(), Self::WriteNarError> {
         let store_path = store_path.to_string();
@@ -83,8 +83,8 @@ impl context::Nix for NixStore {
 
     async fn store_closure(
         &mut self,
-        store_path: &NixStorePath<StoreDir>,
-    ) -> Result<Vec<NixStorePath<StoreDir>>, Self::StoreClosureError> {
+        store_path: &StorePath<StoreDir>,
+    ) -> Result<Vec<StorePath<StoreDir>>, Self::StoreClosureError> {
         let path = self.parse_path(store_path)?;
 
         let mut res = Ok(vec![]);
@@ -99,7 +99,7 @@ impl context::Nix for NixStore {
                 },
             };
             let store_dir = store_path.store_dir().clone();
-            paths.push(NixStorePath::new(basename).with_store_dir(store_dir));
+            paths.push(StorePath::new(basename).with_store_dir(store_dir));
         };
 
         self.store.get_fs_closure(
@@ -128,14 +128,14 @@ impl context::StorePathInfos for nixb::store::PathInfo {
         .transpose()
     }
 
-    fn deriver(&mut self) -> Result<Option<NixStoreBaseName>, Self::Error> {
+    fn deriver(&mut self) -> Result<Option<StoreBaseName>, Self::Error> {
         let Some(store_path) = self.get_deriver()? else { return Ok(None) };
         store_path.basename().map(Some)
     }
 
     fn references(
         &mut self,
-    ) -> Result<SmallVec<[NixStoreBaseName; 2]>, Self::Error> {
+    ) -> Result<SmallVec<[StoreBaseName; 2]>, Self::Error> {
         let mut references = SmallVec::new();
 
         let control_flow =
@@ -153,9 +153,7 @@ impl context::StorePathInfos for nixb::store::PathInfo {
         }
     }
 
-    fn signatures(
-        &mut self,
-    ) -> Result<SmallVec<[NixSignature; 2]>, Self::Error> {
+    fn signatures(&mut self) -> Result<SmallVec<[Signature; 2]>, Self::Error> {
         let mut signatures = SmallVec::new();
 
         let control_flow = self.with_sigs(|sig_bytes| {
@@ -176,7 +174,7 @@ impl context::StorePathInfos for nixb::store::PathInfo {
 }
 
 impl StorePathExt for nixb::store::StorePath {
-    fn basename(&self) -> nixb::Result<NixStoreBaseName> {
+    fn basename(&self) -> nixb::Result<StoreBaseName> {
         let hash = self.hash()?;
         let name = self.with_name(|name| {
             name.parse().map_err(|err| {
@@ -185,11 +183,11 @@ impl StorePathExt for nixb::store::StorePath {
                 ))
             })
         })?;
-        Ok(NixStoreBaseName { hash: Nix32Digest::new(&hash), name })
+        Ok(StoreBaseName { hash: Nix32Digest::new(&hash), name })
     }
 }
 
-fn signature_from_bytes(bytes: &[u8]) -> nixb::Result<NixSignature> {
+fn signature_from_bytes(bytes: &[u8]) -> nixb::Result<Signature> {
     let sig_str = str::from_utf8(bytes).map_err(|_err| {
         nixb::Error::from_message(format_args!(
             "signature is not valid UTF-8: {:?}",

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::{io, process};
 
 use futures::SinkExt;
-use nix_types::NixStorePath;
+use nix_types::StorePath;
 use tokio::net::UnixStream;
 
 use crate::protocol::{self, StoreDir};
@@ -17,7 +17,7 @@ pub struct PushArgs {
     #[arg(long)]
     socket: PathBuf,
     #[arg(required = true)]
-    store_paths: Vec<NixStorePath<StoreDir>>,
+    store_paths: Vec<StorePath<StoreDir>>,
 }
 
 enum PushError {

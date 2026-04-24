@@ -25,11 +25,11 @@ pub struct StartArgs {
 
     #[cfg(feature = "sub60-cache")]
     #[arg(long)]
-    user: nix_types::UserName,
+    user: nix_types::sub60::UserName,
 
     #[cfg(feature = "sub60-cache")]
     #[arg(long)]
-    cache: nix_types::CacheName,
+    cache: nix_types::sub60::CacheName,
 
     #[cfg(feature = "sub60-cache")]
     #[arg(long)]

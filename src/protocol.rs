@@ -16,7 +16,7 @@ use core::{fmt, str};
 use std::io;
 
 use futures::{AsyncRead, AsyncWrite};
-use nix_types::{NixStoreLiteral, NixStorePath};
+use nix_types::{NixStoreLiteral, StorePath};
 use smol_str::SmolStr;
 
 /// The store paths separator in the wire format.
@@ -51,7 +51,7 @@ pin_project_lite::pin_project! {
 
 #[derive(Debug)]
 pub(crate) enum Message {
-    PushStorePath(NixStorePath<StoreDir>),
+    PushStorePath(StorePath<StoreDir>),
     DrainDaemon,
 }
 
@@ -66,7 +66,7 @@ pub enum StoreDir {
 #[derive(Debug)]
 pub(crate) enum ReceiveError {
     Io(io::Error),
-    InvalidStorePath(<NixStorePath<StoreDir> as str::FromStr>::Err),
+    InvalidStorePath(<StorePath<StoreDir> as str::FromStr>::Err),
 }
 
 impl<Writer> Sender<Writer> {
@@ -389,7 +389,7 @@ mod tests {
         })
     }
 
-    fn path(s: &str) -> NixStorePath<StoreDir> {
+    fn path(s: &str) -> StorePath<StoreDir> {
         s.parse().unwrap()
     }
 }

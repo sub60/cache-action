@@ -6,9 +6,9 @@ use nix_types::{
     ContentAddress,
     NarInfo,
     NarInfoFileName,
-    NixSignature,
-    NixStoreBaseName,
-    NixStorePath,
+    Signature,
+    StoreBaseName,
+    StorePath,
 };
 
 use crate::event_loop;
@@ -68,18 +68,18 @@ pub trait DrainProgressReporter {
 
     fn report_path_pushed(
         &mut self,
-        path: &NixStorePath<StoreDir>,
+        path: &StorePath<StoreDir>,
         num_bytes: NonZeroU64,
     ) -> impl Future<Output = ()>;
 
     fn report_path_skipped(
         &mut self,
-        path: &NixStorePath<StoreDir>,
+        path: &StorePath<StoreDir>,
     ) -> impl Future<Output = ()>;
 
     fn report_path_handling_error<C: Cache, N: Nix>(
         &mut self,
-        path: &NixStorePath<StoreDir>,
+        path: &StorePath<StoreDir>,
         error: &event_loop::HandlePathError<C, N>,
     ) -> impl Future<Output = ()>;
 
@@ -98,21 +98,21 @@ pub trait Nix: Clone + Send + 'static {
 
     fn get_path_infos<'path>(
         &mut self,
-        store_path: &'path NixStorePath<StoreDir>,
+        store_path: &'path StorePath<StoreDir>,
     ) -> impl Future<
         Output = Result<Self::PathInfos<'path>, Self::PathInfosError>,
     > + Send;
 
     fn store_closure(
         &mut self,
-        store_path: &NixStorePath<StoreDir>,
+        store_path: &StorePath<StoreDir>,
     ) -> impl Future<
-        Output = Result<Vec<NixStorePath<StoreDir>>, Self::StoreClosureError>,
+        Output = Result<Vec<StorePath<StoreDir>>, Self::StoreClosureError>,
     > + Send;
 
     fn write_nar(
         &mut self,
-        store_path: &NixStorePath<StoreDir>,
+        store_path: &StorePath<StoreDir>,
         writer: impl AsyncWrite + Send,
     ) -> impl Future<Output = Result<(), Self::WriteNarError>> + Send;
 }
@@ -124,15 +124,15 @@ pub trait StorePathInfos {
         &mut self,
     ) -> Result<Option<ContentAddress>, Self::Error>;
 
-    fn deriver(&mut self) -> Result<Option<NixStoreBaseName>, Self::Error>;
+    fn deriver(&mut self) -> Result<Option<StoreBaseName>, Self::Error>;
 
     fn references(
         &mut self,
-    ) -> Result<impl IntoIterator<Item = NixStoreBaseName>, Self::Error>;
+    ) -> Result<impl IntoIterator<Item = StoreBaseName>, Self::Error>;
 
     fn signatures(
         &mut self,
-    ) -> Result<impl IntoIterator<Item = NixSignature>, Self::Error>;
+    ) -> Result<impl IntoIterator<Item = Signature>, Self::Error>;
 }
 
 pub trait Spawner {

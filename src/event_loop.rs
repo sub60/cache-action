@@ -13,7 +13,7 @@ use nix_types::{
     NarInfo,
     NarInfoFileName,
     Nix32Digest,
-    NixStorePath,
+    StorePath,
 };
 use pin_project_lite::pin_project;
 use sha2::{Digest, Sha256};
@@ -50,13 +50,13 @@ pub(crate) struct ActionReport<Ctx: Context> {
     /// The list of store paths for which it wasn't possible to compute their
     /// closure, together with the corresponding error.
     pub(crate) path_closure_errors:
-        Vec<(NixStorePath<StoreDir>, <Ctx::Nix as Nix>::StoreClosureError)>,
+        Vec<(StorePath<StoreDir>, <Ctx::Nix as Nix>::StoreClosureError)>,
 
     /// The list of store paths for which it wasn't possible to compute their
     /// closure, together with the corresponding error.
     #[expect(clippy::type_complexity)]
     pub(crate) path_handling_errors:
-        Vec<(NixStorePath<StoreDir>, HandlePathError<Ctx::Cache, Ctx::Nix>)>,
+        Vec<(StorePath<StoreDir>, HandlePathError<Ctx::Cache, Ctx::Nix>)>,
 }
 
 /// The type of error that can occur when [handling](handle_store_path) a store
@@ -72,7 +72,7 @@ pub(crate) enum HandlePathError<C: Cache, N: Nix> {
 }
 
 enum Event<Writer> {
-    PushStorePath(NixStorePath<StoreDir>),
+    PushStorePath(StorePath<StoreDir>),
     Drain(Writer),
 }
 
@@ -219,7 +219,7 @@ async fn handle_io<I: Io>(
 /// Returns the total number of bytes pushed to the cache, or `None` if the path
 /// was cached.
 async fn handle_store_path<C: Cache, N: Nix>(
-    store_path: &NixStorePath<StoreDir>,
+    store_path: &StorePath<StoreDir>,
     cache: C,
     mut nix: N,
 ) -> Result<Option<NonZeroU64>, HandlePathError<C, N>> {

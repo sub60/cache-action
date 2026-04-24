@@ -3,7 +3,8 @@ use std::sync::LazyLock;
 
 use async_compat::Compat;
 use futures::AsyncRead;
-use nix_types::{CacheName, NarInfo, NarInfoFileName, UserName};
+use nix_types::sub60::{CacheName, UserName};
+use nix_types::{NarInfo, NarInfoFileName};
 use reqwest::{Method, StatusCode};
 use tokio_util::io::ReaderStream;
 

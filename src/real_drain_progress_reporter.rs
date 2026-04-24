@@ -3,7 +3,7 @@ use core::num::NonZeroU64;
 
 use either::Either;
 use futures::{AsyncWrite, AsyncWriteExt};
-use nix_types::NixStorePath;
+use nix_types::StorePath;
 
 use crate::protocol::StoreDir;
 use crate::{context, event_loop};
@@ -41,21 +41,21 @@ impl<W: AsyncWrite + Unpin> context::DrainProgressReporter
 
     async fn report_path_pushed(
         &mut self,
-        path: &NixStorePath<StoreDir>,
+        path: &StorePath<StoreDir>,
         _: NonZeroU64,
     ) {
         let msg = format!("Pushed {path}\n",);
         let _ = self.writer.write_all(msg.as_bytes()).await;
     }
 
-    async fn report_path_skipped(&mut self, path: &NixStorePath<StoreDir>) {
+    async fn report_path_skipped(&mut self, path: &StorePath<StoreDir>) {
         let msg = format!("Skipped {path}\n",);
         let _ = self.writer.write_all(msg.as_bytes()).await;
     }
 
     async fn report_path_handling_error<C: context::Cache, N: context::Nix>(
         &mut self,
-        path: &NixStorePath<StoreDir>,
+        path: &StorePath<StoreDir>,
         _error: &event_loop::HandlePathError<C, N>,
     ) {
         let msg = format!("Failed handling {path}\n",);
