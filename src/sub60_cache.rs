@@ -7,8 +7,10 @@ use nix_types::{CacheName, NarInfo, NarInfoFileName, UserName};
 use reqwest::{Method, StatusCode};
 use tokio_util::io::ReaderStream;
 
+use crate::context;
 use crate::protocol::StoreDir;
-use crate::{AuthToken, context};
+
+pub(crate) type AuthToken = String;
 
 static SUB60_CACHE_URL: LazyLock<url::Url> =
     LazyLock::new(|| "https://cache.sub60.dev".parse().expect("valid URL"));

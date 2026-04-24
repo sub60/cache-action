@@ -11,24 +11,29 @@ use async_compat::Compat;
 use futures::Stream;
 use futures::stream::FusedStream;
 use nix::unistd;
-use nix_types::{CacheName, UserName};
 use tokio::net::{UnixListener as TokioUnixListener, UnixStream};
 
+use crate::event_loop;
 use crate::nix_store::NixStore;
 use crate::real_context::RealContext;
 use crate::tokio::Tokio;
-use crate::{AuthToken, event_loop};
 
 #[derive(Debug, clap::Args)]
 pub struct StartArgs {
     #[arg(long)]
     socket: PathBuf,
+
+    #[cfg(feature = "sub60-cache")]
     #[arg(long)]
-    user: UserName,
+    user: nix_types::UserName,
+
+    #[cfg(feature = "sub60-cache")]
     #[arg(long)]
-    cache: CacheName,
+    cache: nix_types::CacheName,
+
+    #[cfg(feature = "sub60-cache")]
     #[arg(long)]
-    auth_token: AuthToken,
+    auth_token: crate::sub60_cache::AuthToken,
 }
 
 enum StartError {

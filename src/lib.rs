@@ -16,8 +16,6 @@ mod start;
 mod sub60_cache;
 mod tokio;
 
-type AuthToken = String;
-
 #[derive(Debug, clap::Subcommand)]
 pub enum Command {
     Start(start::StartArgs),
