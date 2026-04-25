@@ -1220,7 +1220,7 @@ dependencies = [
 [[package]]
 name = "nix-types"
 version = "0.1.0"
-source = "git+ssh://git@github.com/sub60/nix-types.git#57abbf35bd389275d37f209c06023bd2ba47c62d"
+source = "git+ssh://git@github.com/sub60/nix-types.git#b3c287a8a49cde3f3552a0700d42ed37f9a6b326"
 dependencies = [
  "base64",
  "cauchy",
@@ -1232,7 +1232,6 @@ dependencies = [
  "serde_json",
  "smallvec",
  "smol_str",
- "ulid",
  "url",
 ]
 
@@ -2238,16 +2237,6 @@ name = "typenum"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
-
-[[package]]
-name = "ulid"
-version = "1.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "470dbf6591da1b39d43c14523b2b469c86879a53e8b758c8e090a470fe7b1fbe"
-dependencies = [
- "rand",
- "web-time",
-]
 
 [[package]]
 name = "unicode-ident"

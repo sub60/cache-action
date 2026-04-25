@@ -1,6 +1,7 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
+mod async_read_ext;
 mod context;
 mod drain;
 mod event_loop;

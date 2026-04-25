@@ -1,7 +1,7 @@
 use core::convert::Infallible;
 
 use futures::AsyncRead;
-use nix_types::{NarInfo, NarInfoFileName};
+use nix_types::{NarInfo, NarInfoFileName, StorePath};
 
 use crate::context::Cache;
 use crate::protocol::StoreDir;
@@ -22,7 +22,7 @@ impl Cache for NoopCache {
 
     async fn initiate_nar_upload(
         &self,
-        _: &NarInfoFileName,
+        _: &StorePath<StoreDir>,
     ) -> Result<Self::NarUploadState, Self::Error> {
         Ok(())
     }

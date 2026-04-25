@@ -13,7 +13,7 @@ use nix_types::{
     ContentAddress,
     Nix32Digest,
     Signature,
-    StoreBaseName,
+    StoreBasename,
     StorePath,
 };
 use nixb::store::GetFsClosureOpts;
@@ -30,7 +30,7 @@ pub(crate) struct NixStore {
 }
 
 trait StorePathExt {
-    fn basename(&self) -> nixb::Result<StoreBaseName>;
+    fn basename(&self) -> nixb::Result<StoreBasename>;
 }
 
 impl NixStore {
@@ -128,14 +128,14 @@ impl context::StorePathInfos for nixb::store::PathInfo {
         .transpose()
     }
 
-    fn deriver(&mut self) -> Result<Option<StoreBaseName>, Self::Error> {
+    fn deriver(&mut self) -> Result<Option<StoreBasename>, Self::Error> {
         let Some(store_path) = self.get_deriver()? else { return Ok(None) };
         store_path.basename().map(Some)
     }
 
     fn references(
         &mut self,
-    ) -> Result<SmallVec<[StoreBaseName; 2]>, Self::Error> {
+    ) -> Result<SmallVec<[StoreBasename; 2]>, Self::Error> {
         let mut references = SmallVec::new();
 
         let control_flow =
@@ -174,7 +174,7 @@ impl context::StorePathInfos for nixb::store::PathInfo {
 }
 
 impl StorePathExt for nixb::store::StorePath {
-    fn basename(&self) -> nixb::Result<StoreBaseName> {
+    fn basename(&self) -> nixb::Result<StoreBasename> {
         let hash = self.hash()?;
         let name = self.with_name(|name| {
             name.parse().map_err(|err| {
@@ -183,7 +183,7 @@ impl StorePathExt for nixb::store::StorePath {
                 ))
             })
         })?;
-        Ok(StoreBaseName { hash: Nix32Digest::new(&hash), name })
+        Ok(StoreBasename { hash: Nix32Digest::new(&hash), name })
     }
 }
 

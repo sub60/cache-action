@@ -236,7 +236,7 @@ async fn handle_store_path<C: Cache, N: Nix>(
     }
 
     let mut nar_upload_state = cache
-        .initiate_nar_upload(&narinfo_filename)
+        .initiate_nar_upload(store_path)
         .await
         .map_err(HandlePathError::CreateNarUploadId)?;
 

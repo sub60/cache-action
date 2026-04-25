@@ -7,7 +7,7 @@ use nix_types::{
     NarInfo,
     NarInfoFileName,
     Signature,
-    StoreBaseName,
+    StoreBasename,
     StorePath,
 };
 
@@ -43,7 +43,7 @@ pub trait Cache: Clone + Send + 'static {
 
     fn initiate_nar_upload(
         &self,
-        narinfo_filename: &NarInfoFileName,
+        store_path: &StorePath<StoreDir>,
     ) -> impl Future<Output = Result<Self::NarUploadState, Self::Error>> + Send;
 
     fn upload_nar(
@@ -124,11 +124,11 @@ pub trait StorePathInfos {
         &mut self,
     ) -> Result<Option<ContentAddress>, Self::Error>;
 
-    fn deriver(&mut self) -> Result<Option<StoreBaseName>, Self::Error>;
+    fn deriver(&mut self) -> Result<Option<StoreBasename>, Self::Error>;
 
     fn references(
         &mut self,
-    ) -> Result<impl IntoIterator<Item = StoreBaseName>, Self::Error>;
+    ) -> Result<impl IntoIterator<Item = StoreBasename>, Self::Error>;
 
     fn signatures(
         &mut self,
