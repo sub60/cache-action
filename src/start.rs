@@ -5,7 +5,8 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 use std::os::unix::net::UnixListener as StdUnixListener;
 use std::path::PathBuf;
-use std::{fs, io, process};
+use std::time::Instant;
+use std::{env, fs, io, process};
 
 use async_compat::Compat;
 use futures::Stream;
@@ -61,17 +62,27 @@ pub(crate) fn start(args: StartArgs) {
 }
 
 fn start_inner(args: StartArgs) -> Result<(), StartError> {
+    let start_started_at = Instant::now();
+
+    let bind_socket_started_at = Instant::now();
     let std_listener =
         StdUnixListener::bind(&args.socket).map_err(StartError::BindSocket)?;
+    log_start_timing("bind socket", bind_socket_started_at);
 
+    let open_nix_store_started_at = Instant::now();
     let nix_store = NixStore::open().map_err(StartError::OpenNixStore)?;
+    log_start_timing("open Nix store", open_nix_store_started_at);
 
     // Create a pipe for the daemon process to signal readiness.
+    let create_pipe_started_at = Instant::now();
     let (read_fd, write_fd) = unistd::pipe().map_err(StartError::CreatePipe)?;
+    log_start_timing("create startup pipe", create_pipe_started_at);
 
     // SAFETY: the process is fully single-threaded at this point.
+    let fork_started_at = Instant::now();
     let fork_result =
         unsafe { unistd::fork() }.map_err(StartError::ForkProcess)?;
+    log_start_timing("fork", fork_started_at);
 
     match fork_result {
         unistd::ForkResult::Parent { child } => {
@@ -80,6 +91,7 @@ fn start_inner(args: StartArgs) -> Result<(), StartError> {
 
             // Block until the child signals readiness.
             let mut status = [0];
+            let wait_ready_started_at = Instant::now();
             match unistd::read(&read_fd, &mut status) {
                 Ok(1) if status[0] == 0 => {},
                 Ok(1) if status[0] == 1 => {
@@ -101,11 +113,21 @@ fn start_inner(args: StartArgs) -> Result<(), StartError> {
                 Ok(0) | Err(_) => return Err(StartError::DaemonDidntStart),
                 _ => unreachable!(),
             }
+            log_start_timing(
+                "wait for daemon readiness",
+                wait_ready_started_at,
+            );
 
+            let canonicalize_socket_started_at = Instant::now();
             let socket_path =
                 fs::canonicalize(&args.socket).map_err(|err| {
                     StartError::CanonicalizeSocketPath(args.socket, err)
                 })?;
+            log_start_timing(
+                "canonicalize socket path",
+                canonicalize_socket_started_at,
+            );
+            log_start_timing("start command total", start_started_at);
 
             println!(
                 "Started daemon with process ID {child}, listening on {}",
@@ -117,6 +139,7 @@ fn start_inner(args: StartArgs) -> Result<(), StartError> {
             // We only write to the parent process.
             drop(read_fd);
 
+            let connect_cache_started_at = Instant::now();
             let cache = match cfg_select! {
                 feature = "noop-cache" => Ok::<_, StartError>(crate::noop_cache::NoopCache::default()),
                 feature = "sub60-cache" => {
@@ -138,12 +161,24 @@ fn start_inner(args: StartArgs) -> Result<(), StartError> {
                     process::exit(1);
                 },
             };
+            log_start_timing(
+                "child create cache client",
+                connect_cache_started_at,
+            );
 
+            let create_runtime_started_at = Instant::now();
             let tokio = Tokio::new();
+            log_start_timing(
+                "child create Tokio runtime",
+                create_runtime_started_at,
+            );
 
+            let create_context_started_at = Instant::now();
             let mut context = RealContext::new(nix_store, tokio.spawner());
+            log_start_timing("child create context", create_context_started_at);
 
             tokio.block_on(async {
+                let listener_started_at = Instant::now();
                 std_listener
                     .set_nonblocking(true)
                     .expect("couldn't set socket to non-blocking");
@@ -153,10 +188,19 @@ fn start_inner(args: StartArgs) -> Result<(), StartError> {
                         "couldn't convert std's UnixListener to tokio's \
                          UnixListener",
                     );
+                log_start_timing(
+                    "child create async listener",
+                    listener_started_at,
+                );
 
                 // Signal to the parent that we're ready.
+                let signal_ready_started_at = Instant::now();
                 let _ = unistd::write(&write_fd, &[0]);
                 drop(write_fd);
+                log_start_timing(
+                    "child signal readiness",
+                    signal_ready_started_at,
+                );
 
                 event_loop::run(cache, UnixStreams { listener }, &mut context)
                     .await;
@@ -165,6 +209,28 @@ fn start_inner(args: StartArgs) -> Result<(), StartError> {
     }
 
     Ok(())
+}
+
+fn log_start_timing(label: &str, started_at: Instant) {
+    if !timing_enabled() {
+        return;
+    }
+
+    eprintln!(
+        "cache-action start timing: {label}: {}ms",
+        started_at.elapsed().as_millis(),
+    );
+}
+
+fn timing_enabled() -> bool {
+    env::var("SUB60_CACHE_ACTION_DEBUG_TIMING")
+        .or_else(|_| env::var("ACTIONS_STEP_DEBUG"))
+        .is_ok_and(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
 }
 
 impl Stream for UnixStreams {
