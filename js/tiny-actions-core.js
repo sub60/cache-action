@@ -86,21 +86,6 @@ const info = (message) => {
 };
 
 /**
- * @param {string} value
- * @returns {string}
- */
-const escapeCommandValue = (value) => {
-  return value.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
-};
-
-/**
- * @param {string} message
- */
-const debug = (message) => {
-  process.stdout.write(`::debug::${escapeCommandValue(message)}\n`);
-};
-
-/**
  * @param {string} message
  */
 const setFailed = (message) => {
@@ -109,7 +94,6 @@ const setFailed = (message) => {
 };
 
 module.exports = {
-  debug,
   exportVariable,
   getInput,
   getState,

@@ -19,7 +19,7 @@ if (!socketPath || !binaryPath) {
   process.exit(0);
 }
 
-const { status } = spawnSync(binaryPath, ["drain", "--socket", socketPath], {
+const { status } = spawnSync(binaryPath, ["stop", "--socket", socketPath], {
   stdio: "inherit",
 });
 

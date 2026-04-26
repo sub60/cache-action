@@ -214,6 +214,7 @@ const downloadFile = async (url, destinationPath, headers = {}) => {
   }
 
   const output = fs.createWriteStream(destinationPath, { mode: 0o755 });
+  Readable.fromWeb(response.body).pipe(output);
   await finished(output);
   await fsp.chmod(destinationPath, 0o755);
 };
@@ -379,7 +380,7 @@ const main = async () => {
     child = spawn(
       binaryPath,
       [
-        "start",
+        "run",
         "--socket",
         socketPath,
         "--ready-fd",
