@@ -312,12 +312,18 @@ const readReady = async (readyStream) => {
 const waitForDaemonReady = async (child) => {
   const readyStream = child.stdio[3];
 
-  if (!readyStream) {
+  if (!(readyStream instanceof Readable)) {
     throw new Error("daemon readiness pipe was not created");
   }
 
-  let onError;
-  let onExit;
+  const readableReadyStream = /** @type {import("node:stream").Readable} */ (
+    readyStream
+  );
+
+  /** @type {(error: Error) => void} */
+  let onError = () => {};
+  /** @type {(code: number | null, signal: NodeJS.Signals | null) => void} */
+  let onExit = () => {};
 
   const exitedEarly = new Promise((_, reject) => {
     onError = reject;
@@ -334,7 +340,7 @@ const waitForDaemonReady = async (child) => {
   });
 
   try {
-    await Promise.race([readReady(readyStream), exitedEarly]);
+    await Promise.race([readReady(readableReadyStream), exitedEarly]);
   } finally {
     child.off("error", onError);
     child.off("exit", onExit);
@@ -403,8 +409,9 @@ const main = async () => {
 
   await waitForDaemonReady(child);
 
-  // TODO: print this:
-  // Started daemon with process ID 2400, listening on /home/runner/work/_temp/sub60-cache-action-hWjjZv/daemon.sock
+  core.info(
+    `Started daemon with process ID ${child.pid}, listening on ${socketPath}`,
+  );
 
   child.unref();
 };
