@@ -5,7 +5,7 @@ edition = "2024"
 
 [features]
 noop-cache = []
-sub60-cache = []
+sub60-cache = ["dep:reqwest"]
 
 [dependencies]
 async-compat = "0.2"
@@ -15,7 +15,6 @@ either = "1"
 flume = { version = "0.12" }
 futures = { version = "0.3" }
 memchr = "2"
-nix = { version = "0.31", features = ["process"] }
 nix-compat = { git = "https://git.snix.dev/snix/snix", default-features = false, features = [
   "async",
   "wire",
@@ -26,7 +25,6 @@ nixb = { git = "https://github.com/noib3/nixb", branch = "store-path-info", feat
   "store",
 ] }
 pin-project-lite = "0.2"
-reqwest = { version = "0.13", features = ["stream"] }
 sha2 = "0.11"
 smallvec = "1"
 smol_str = "0.3.6"
@@ -36,9 +34,11 @@ tokio = { version = "1", default-features = false, features = [
   "io-util",
   "net",
   "rt-multi-thread",
+  "time",
 ] }
-tokio-util = { version = "0.7", features = ["io"] }
 url = "2"
+
+reqwest = { version = "0.13", optional = true }
 
 [build-dependencies]
 pkg-config = "0.3"
