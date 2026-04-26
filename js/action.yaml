@@ -9,8 +9,6 @@ inputs:
     required: true
   cache:
     required: true
-  debug-timing:
-    required: false
 
 runs:
   using: "node24"
