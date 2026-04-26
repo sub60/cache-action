@@ -1,7 +1,7 @@
 use futures::AsyncWrite;
 
 use crate::nix_store::NixStore;
-use crate::real_drain_progress_reporter::RealDrainProgressReporter;
+use crate::real_stop_progress_reporter::RealStopProgressReporter;
 use crate::tokio::TokioSpawner;
 use crate::{context, protocol};
 
@@ -21,8 +21,8 @@ impl context::Context for RealContext {
     type Cache = crate::noop_cache::NoopCache;
     #[cfg(feature = "sub60-cache")]
     type Cache = crate::sub60_cache::Sub60Cache;
-    type DrainProgressReporter<W: AsyncWrite + Unpin> =
-        RealDrainProgressReporter<W>;
+    type StopProgressReporter<W: AsyncWrite + Unpin> =
+        RealStopProgressReporter<W>;
     type Nix = NixStore;
     type Spawner = TokioSpawner;
 
@@ -30,11 +30,11 @@ impl context::Context for RealContext {
         eprintln!("{rx_error}")
     }
 
-    fn new_drain_progress_reporter<W: AsyncWrite + Unpin>(
+    fn new_stop_progress_reporter<W: AsyncWrite + Unpin>(
         &mut self,
         writer: W,
-    ) -> Self::DrainProgressReporter<W> {
-        RealDrainProgressReporter::new(writer)
+    ) -> Self::StopProgressReporter<W> {
+        RealStopProgressReporter::new(writer)
     }
 
     fn nix(&self) -> &Self::Nix {

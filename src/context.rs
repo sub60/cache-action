@@ -16,16 +16,16 @@ use crate::protocol::{self, StoreDir};
 
 pub trait Context {
     type Cache: Cache;
-    type DrainProgressReporter<W: AsyncWrite + Unpin>: DrainProgressReporter;
     type Nix: Nix;
     type Spawner: Spawner;
+    type StopProgressReporter<W: AsyncWrite + Unpin>: StopProgressReporter;
 
     fn handle_rx_error(&mut self, rx_error: protocol::ReceiveError);
 
-    fn new_drain_progress_reporter<W: AsyncWrite + Unpin>(
+    fn new_stop_progress_reporter<W: AsyncWrite + Unpin>(
         &mut self,
         writer: W,
-    ) -> Self::DrainProgressReporter<W>;
+    ) -> Self::StopProgressReporter<W>;
 
     fn nix(&self) -> &Self::Nix;
 
@@ -60,7 +60,7 @@ pub trait Cache: Clone + Send + 'static {
     ) -> impl Future<Output = Result<u64, Self::Error>> + Send;
 }
 
-pub trait DrainProgressReporter {
+pub trait StopProgressReporter {
     fn report_paths_left_to_handle(
         &mut self,
         num_paths_left_to_handle: u32,

@@ -10,7 +10,7 @@ mod noop_cache;
 mod protocol;
 mod push;
 mod real_context;
-mod real_drain_progress_reporter;
+mod real_stop_progress_reporter;
 mod run;
 mod stop;
 #[cfg(feature = "sub60-cache")]
