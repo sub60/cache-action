@@ -3,7 +3,6 @@
 
 mod async_read_ext;
 mod context;
-mod drain;
 mod event_loop;
 mod nix_store;
 #[cfg(feature = "noop-cache")]
@@ -11,23 +10,24 @@ mod noop_cache;
 mod protocol;
 mod push;
 mod real_context;
-mod real_drain_progress_reporter;
-mod start;
+mod real_stop_progress_reporter;
+mod run;
+mod stop;
 #[cfg(feature = "sub60-cache")]
 mod sub60_cache;
 mod tokio;
 
 #[derive(Debug, clap::Subcommand)]
 pub enum Command {
-    Start(start::StartArgs),
+    Run(run::RunArgs),
     Push(push::PushArgs),
-    Drain(drain::DrainArgs),
+    Stop(stop::StopArgs),
 }
 
 pub fn run(command: Command) {
     match command {
-        Command::Start(args) => start::start(args),
+        Command::Run(args) => run::run(args),
         Command::Push(args) => push::push(args),
-        Command::Drain(args) => drain::drain(args),
+        Command::Stop(args) => stop::stop(args),
     }
 }

@@ -3,12 +3,16 @@
 const core = require("./tiny-actions-core");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
-const { spawnSync } = require("node:child_process");
+const { spawn } = require("node:child_process");
 const os = require("node:os");
 const path = require("node:path");
 const { Readable } = require("node:stream");
 const { finished } = require("node:stream/promises");
-const { STATE_SOCKET_PATH, STATE_BINARY_PATH } = require("./state");
+const {
+  STATE_BINARY_PATH,
+  STATE_DAEMON_LOG_PATH,
+  STATE_SOCKET_PATH,
+} = require("./state");
 
 const binaryName = "cache-action";
 
@@ -272,6 +276,78 @@ const mergedUserConfFiles = (configPath) => {
 };
 
 /**
+ * @param {import("node:stream").Readable} readyStream
+ * @returns {Promise<void>}
+ */
+const readReady = async (readyStream) => {
+  const chunks = [];
+
+  for await (const chunk of readyStream) {
+    chunks.push(Buffer.from(chunk));
+  }
+
+  const message = Buffer.concat(chunks);
+
+  if (message.length === 0) {
+    throw new Error("daemon exited before reporting readiness");
+  }
+
+  if (message[0] === 0) {
+    return;
+  }
+
+  if (message[0] === 1) {
+    throw new Error(
+      message.subarray(1).toString("utf8") || "daemon startup failed",
+    );
+  }
+
+  throw new Error(`daemon reported unknown startup status ${message[0]}`);
+};
+
+/**
+ * @param {import("node:child_process").ChildProcess} child
+ * @returns {Promise<void>}
+ */
+const waitForDaemonReady = async (child) => {
+  const readyStream = child.stdio[3];
+
+  if (!(readyStream instanceof Readable)) {
+    throw new Error("daemon readiness pipe was not created");
+  }
+
+  const readableReadyStream = /** @type {import("node:stream").Readable} */ (
+    readyStream
+  );
+
+  /** @type {(error: Error) => void} */
+  let onError = () => {};
+  /** @type {(code: number | null, signal: NodeJS.Signals | null) => void} */
+  let onExit = () => {};
+
+  const exitedEarly = new Promise((_, reject) => {
+    onError = reject;
+    onExit = (code, signal) => {
+      reject(
+        new Error(
+          `daemon exited before readiness: code=${code}, signal=${signal}`,
+        ),
+      );
+    };
+
+    child.once("error", onError);
+    child.once("exit", onExit);
+  });
+
+  try {
+    await Promise.race([readReady(readableReadyStream), exitedEarly]);
+  } finally {
+    child.off("error", onError);
+    child.off("exit", onExit);
+  }
+};
+
+/**
  * @returns {Promise<void>}
  */
 const main = async () => {
@@ -288,6 +364,7 @@ const main = async () => {
   const binaryPath = path.join(daemonDir, binaryName);
   const hookPath = path.join(daemonDir, "post-build-hook.sh");
   const configPath = path.join(daemonDir, "nix.conf");
+  const daemonLogPath = path.join(daemonDir, "daemon.log");
   const assetName = `${binaryName}-${target}`;
 
   const { url, headers } = await releaseAssetRequest(assetName, githubToken);
@@ -297,30 +374,46 @@ const main = async () => {
 
   core.saveState(STATE_SOCKET_PATH, socketPath);
   core.saveState(STATE_BINARY_PATH, binaryPath);
+  core.saveState(STATE_DAEMON_LOG_PATH, daemonLogPath);
 
   await writeHookScript(hookPath, binaryPath, socketPath);
   await writeNixConfig(configPath, hookPath);
   core.exportVariable("NIX_USER_CONF_FILES", mergedUserConfFiles(configPath));
 
-  const { status } = spawnSync(
-    binaryPath,
-    [
-      "start",
-      "--socket",
-      socketPath,
-      "--auth-token",
-      authToken,
-      "--user",
-      user,
-      "--cache",
-      cache,
-    ],
-    { stdio: "inherit" },
+  const daemonLogFd = fs.openSync(daemonLogPath, "a");
+  let child;
+  try {
+    child = spawn(
+      binaryPath,
+      [
+        "run",
+        "--socket",
+        socketPath,
+        "--ready-fd",
+        "3",
+        "--auth-token",
+        authToken,
+        "--user",
+        user,
+        "--cache",
+        cache,
+      ],
+      {
+        detached: true,
+        stdio: ["ignore", daemonLogFd, daemonLogFd, "pipe"],
+      },
+    );
+  } finally {
+    fs.closeSync(daemonLogFd);
+  }
+
+  await waitForDaemonReady(child);
+
+  core.info(
+    `Started daemon with process ID ${child.pid}, listening on ${socketPath}`,
   );
 
-  if (status !== 0) {
-    process.exit(status);
-  }
+  child.unref();
 };
 
 main().catch((error) => {

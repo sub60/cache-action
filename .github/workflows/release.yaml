@@ -12,8 +12,8 @@ jobs:
     strategy:
       matrix:
         include:
-          - package: aarch64-linux
-            runner: ubuntu-latest
+          # - package: aarch64-linux
+          #   runner: ubuntu-latest
           - package: x86_64-linux
             runner: ubuntu-latest
           # - package: aarch64-darwin

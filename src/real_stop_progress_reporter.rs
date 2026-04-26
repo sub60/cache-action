@@ -8,19 +8,19 @@ use nix_types::StorePath;
 use crate::protocol::StoreDir;
 use crate::{context, event_loop};
 
-pub(crate) struct RealDrainProgressReporter<W> {
+pub(crate) struct RealStopProgressReporter<W> {
     reported_paths_left_to_handle: bool,
     writer: W,
 }
 
-impl<W> RealDrainProgressReporter<W> {
+impl<W> RealStopProgressReporter<W> {
     pub(crate) fn new(writer: W) -> Self {
         Self { reported_paths_left_to_handle: false, writer }
     }
 }
 
-impl<W: AsyncWrite + Unpin> context::DrainProgressReporter
-    for RealDrainProgressReporter<W>
+impl<W: AsyncWrite + Unpin> context::StopProgressReporter
+    for RealStopProgressReporter<W>
 {
     async fn report_paths_left_to_handle(
         &mut self,

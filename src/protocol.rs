@@ -1,12 +1,12 @@
 //! The wire protocol spoken on the Unix domain socket between the daemon and
-//! the `push`/`drain` subcommands.
+//! the `push`/`stop` subcommands.
 //!
 //! Store paths are separated by newlines, and a null byte signals the daemon to
-//! drain and shut down.
+//! stop and shut down.
 //!
 //! ```text
 //! push:  /nix/store/abc-foo\n/nix/store/def-bar\n
-//! drain: \0
+//! stop: \0
 //! ```
 
 use core::ops::Range;
@@ -22,9 +22,9 @@ use smol_str::SmolStr;
 /// The store paths separator in the wire format.
 const PATH_SEPARATOR: u8 = b'\n';
 
-/// The sentinal byte which signals the daemon to drain pending uploads and shut
+/// The sentinal byte which signals the daemon to stop pending uploads and shut
 /// down.
-const DRAIN_SENTINEL: u8 = b'\0';
+const STOP_SENTINEL: u8 = b'\0';
 
 pin_project_lite::pin_project! {
     pub(crate) struct Sender<Writer> {
@@ -52,7 +52,7 @@ pin_project_lite::pin_project! {
 #[derive(Debug)]
 pub(crate) enum Message {
     PushStorePath(StorePath<StoreDir>),
-    DrainDaemon,
+    StopDaemon,
 }
 
 #[derive(Clone)]
@@ -134,8 +134,8 @@ impl<Writer: AsyncWrite> futures::Sink<Message> for Sender<Writer> {
                     .expect("writing to a Vec never fails");
                 buf.push(PATH_SEPARATOR);
             },
-            Message::DrainDaemon => {
-                buf.push(DRAIN_SENTINEL);
+            Message::StopDaemon => {
+                buf.push(STOP_SENTINEL);
             },
         }
 
@@ -186,8 +186,8 @@ impl<Reader: AsyncRead> futures::Stream for Receiver<Reader> {
         let res = loop {
             let bytes = &this.buf[this.unhandled_range.clone()];
 
-            if let Some(&DRAIN_SENTINEL) = bytes.first() {
-                break Ok(Message::DrainDaemon);
+            if let Some(&STOP_SENTINEL) = bytes.first() {
+                break Ok(Message::StopDaemon);
             }
 
             let Some(separator_offset) = memchr::memchr(PATH_SEPARATOR, bytes)
@@ -224,7 +224,7 @@ impl<Reader: AsyncRead> futures::Stream for Receiver<Reader> {
             };
         };
 
-        *this.is_done = matches!(res, Ok(Message::DrainDaemon) | Err(_));
+        *this.is_done = matches!(res, Ok(Message::StopDaemon) | Err(_));
 
         Poll::Ready(Some(res))
     }
@@ -286,12 +286,12 @@ mod tests {
     }
 
     #[test]
-    fn send_drain() {
-        assert_eq!(send_messages(vec![Message::DrainDaemon]), b"\0");
+    fn send_stop() {
+        assert_eq!(send_messages(vec![Message::StopDaemon]), b"\0");
     }
 
     #[test]
-    fn send_paths_then_drain() {
+    fn send_paths_then_stop() {
         let bytes = send_messages(vec![
             Message::PushStorePath(path(
                 "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-foo",
@@ -299,7 +299,7 @@ mod tests {
             Message::PushStorePath(path(
                 "/nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-bar",
             )),
-            Message::DrainDaemon,
+            Message::StopDaemon,
         ]);
 
         assert_eq!(
@@ -337,20 +337,20 @@ mod tests {
     }
 
     #[test]
-    fn receive_drain() {
+    fn receive_stop() {
         let msgs = parse_messages(b"\0");
         assert_eq!(msgs.len(), 1);
-        assert!(matches!(msgs[0], Ok(Message::DrainDaemon)));
+        assert!(matches!(msgs[0], Ok(Message::StopDaemon)));
     }
 
     #[test]
-    fn receive_paths_then_drain() {
+    fn receive_paths_then_stop() {
         let msgs = parse_messages(
             b"/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-foo\n\0",
         );
         assert_eq!(msgs.len(), 2);
         assert!(matches!(msgs[0], Ok(Message::PushStorePath(_))));
-        assert!(matches!(msgs[1], Ok(Message::DrainDaemon)));
+        assert!(matches!(msgs[1], Ok(Message::StopDaemon)));
     }
 
     #[test]

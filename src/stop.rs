@@ -13,29 +13,29 @@ use crate::protocol;
 use crate::tokio::Tokio;
 
 #[derive(Debug, clap::Args)]
-pub struct DrainArgs {
+pub struct StopArgs {
     #[arg(long)]
     socket: PathBuf,
 }
 
-enum DrainError {
+enum StopError {
     ConnectToSocket(io::Error),
     WriteMessage(io::Error),
 }
 
-pub(crate) fn drain(args: DrainArgs) {
-    let drain_result: Result<(), DrainError> =
+pub(crate) fn stop(args: StopArgs) {
+    let stop_result: Result<(), StopError> =
         Tokio::new().block_on(async move {
             let socket = UnixStream::connect(&args.socket)
                 .await
-                .map_err(DrainError::ConnectToSocket)?;
+                .map_err(StopError::ConnectToSocket)?;
 
             let (mut read_half, write_half) = socket.into_split();
 
             pin!(protocol::Sender::new(async_compat::Compat::new(write_half)))
-                .send(protocol::Message::DrainDaemon)
+                .send(protocol::Message::StopDaemon)
                 .await
-                .map_err(DrainError::WriteMessage)?;
+                .map_err(StopError::WriteMessage)?;
 
             let mut stdout = tokio::io::stdout();
 
@@ -51,13 +51,13 @@ pub(crate) fn drain(args: DrainArgs) {
             Ok(())
         });
 
-    if let Err(drain_error) = drain_result {
-        eprintln!("{drain_error}");
+    if let Err(stop_error) = stop_result {
+        eprintln!("{stop_error}");
         process::exit(1);
     }
 }
 
-impl fmt::Display for DrainError {
+impl fmt::Display for StopError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::ConnectToSocket(error) => {

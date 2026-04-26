@@ -21,10 +21,10 @@ use sha2::{Digest, Sha256};
 use crate::context::{
     Cache,
     Context,
-    DrainProgressReporter,
     JoinHandle,
     Nix,
     Spawner,
+    StopProgressReporter,
     StorePathInfos,
 };
 use crate::protocol::{self, StoreDir};
@@ -73,7 +73,7 @@ pub(crate) enum HandlePathError<C: Cache, N: Nix> {
 
 enum Event<Writer> {
     PushStorePath(StorePath<StoreDir>),
-    Drain(Writer),
+    Stop(Writer),
 }
 
 pin_project! {
@@ -106,7 +106,7 @@ pub(crate) async fn run<Ctx: Context>(
 
     let mut report = ActionReport::<Ctx>::default();
 
-    let drain_progress_writer = loop {
+    let stop_progress_writer = loop {
         select! {
             io = io_stream.select_next_some() => {
                 ctx.spawner().spawn(handle_io(io, message_tx.clone())).detach();
@@ -122,7 +122,7 @@ pub(crate) async fn run<Ctx: Context>(
                         };
                         store_closures.push(ctx.spawner().spawn(fut));
                     },
-                    Ok(Event::Drain(writer)) => break writer,
+                    Ok(Event::Stop(writer)) => break writer,
                     Err(rx_err) => ctx.handle_rx_error(rx_err),
                 }
             },
@@ -162,9 +162,9 @@ pub(crate) async fn run<Ctx: Context>(
         };
     };
 
-    let writer = pin!(drain_progress_writer);
+    let writer = pin!(stop_progress_writer);
 
-    let mut reporter = ctx.new_drain_progress_reporter(writer);
+    let mut reporter = ctx.new_stop_progress_reporter(writer);
 
     reporter.report_paths_left_to_handle(handle_store_paths.len() as u32).await;
 
@@ -202,8 +202,8 @@ async fn handle_io<I: Io>(
             Ok(protocol::Message::PushStorePath(store_path)) => {
                 let _ = message_tx.send(Ok(Event::PushStorePath(store_path)));
             },
-            Ok(protocol::Message::DrainDaemon) => {
-                let _ = message_tx.send(Ok(Event::Drain(writer)));
+            Ok(protocol::Message::StopDaemon) => {
+                let _ = message_tx.send(Ok(Event::Stop(writer)));
                 return;
             },
             Err(err) => {
