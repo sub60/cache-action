@@ -187,7 +187,13 @@
           };
           cargoArtifacts = craneLib.buildDepsOnly commonArgs;
         in
-        craneLib.buildPackage (commonArgs // { inherit cargoArtifacts; });
+        craneLib.buildPackage (
+          commonArgs
+          // {
+            inherit cargoArtifacts;
+            cargoExtraArgs = "--features sub60-cache";
+          }
+        );
 
       mkTreefmt =
         pkgs:
