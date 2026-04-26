@@ -1220,7 +1220,7 @@ dependencies = [
 [[package]]
 name = "nix-types"
 version = "0.1.0"
-source = "git+ssh://git@github.com/sub60/nix-types.git#b3c287a8a49cde3f3552a0700d42ed37f9a6b326"
+source = "git+ssh://git@github.com/sub60/nix-types.git#41755f2105ba6219c67649a283dc1f121f65de01"
 dependencies = [
  "base64",
  "cauchy",

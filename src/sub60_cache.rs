@@ -1,5 +1,6 @@
 use core::num::{NonZeroU16, NonZeroU32};
 use core::pin::pin;
+use core::str::FromStr;
 use core::{fmt, iter};
 use std::collections::VecDeque;
 use std::io;
@@ -9,7 +10,7 @@ use bytes::{Bytes, BytesMut};
 use futures::AsyncRead;
 use nix_types::sub60::nar_multiparts::{
     CompleteRequestBody,
-    ETag,
+    Etag,
     NarMultipartsResponseBody,
     PartsRequestBody,
     PartsResponseBody,
@@ -42,7 +43,7 @@ pub(crate) enum CacheConnectError {
 
 #[derive(Debug)]
 pub(crate) enum CacheRequestError {
-    ParseEtag(<ETag as core::str::FromStr>::Err),
+    ParseEtag(QuotedFromStrError<<Etag as FromStr>::Err>),
     InvalidResponseHeader {
         method: Method,
         url: url::Url,
@@ -65,6 +66,7 @@ pub(crate) enum CacheRequestError {
         method: Method,
         status: StatusCode,
         url: url::Url,
+        body: String,
     },
 }
 
@@ -74,6 +76,14 @@ pub(crate) struct NarUploadState {
     store_basename: StoreBasename,
     upload_id: UploadId,
 }
+
+#[derive(Debug)]
+pub(crate) enum QuotedFromStrError<T> {
+    MissingQuotes,
+    Inner(T),
+}
+
+struct Quoted<T>(T);
 
 impl Sub60Cache {
     /// TODO: docs.
@@ -99,7 +109,7 @@ impl Sub60Cache {
     async fn complete_nar_upload(
         &self,
         upload_id: &UploadId,
-        etags: SmallVec<[ETag; 8]>,
+        etags: SmallVec<[Etag; 8]>,
         store_basename: StoreBasename,
     ) -> Result<(), CacheRequestError> {
         let url = self.nar_multiparts_complete_url(upload_id);
@@ -115,11 +125,12 @@ impl Sub60Cache {
         if response.status().is_success() {
             Ok(())
         } else {
-            Err(CacheRequestError::UnexpectedResponse {
-                method: Method::POST,
-                status: response.status(),
+            Err(CacheRequestError::unexpected_response(
+                response,
+                Method::POST,
                 url,
-            })
+            )
+            .await)
         }
     }
 
@@ -184,11 +195,12 @@ impl Sub60Cache {
             .map_err(CacheRequestError::Request)?;
 
         if !response.status().is_success() {
-            return Err(CacheRequestError::UnexpectedResponse {
-                method: Method::POST,
-                status: response.status(),
+            return Err(CacheRequestError::unexpected_response(
+                response,
+                Method::POST,
                 url,
-            });
+            )
+            .await);
         }
 
         Ok(response
@@ -204,7 +216,7 @@ impl Sub60Cache {
         &self,
         url: url::Url,
         part_bytes: Bytes,
-    ) -> Result<ETag, CacheRequestError> {
+    ) -> Result<Etag, CacheRequestError> {
         let response = self
             .client
             .put(url.clone())
@@ -214,11 +226,12 @@ impl Sub60Cache {
             .map_err(CacheRequestError::Request)?;
 
         if !response.status().is_success() {
-            return Err(CacheRequestError::UnexpectedResponse {
-                method: Method::PUT,
-                status: response.status(),
+            return Err(CacheRequestError::unexpected_response(
+                response,
+                Method::PUT,
                 url,
-            });
+            )
+            .await);
         }
 
         let etag = response.headers().get(header::ETAG).ok_or_else(|| {
@@ -236,8 +249,26 @@ impl Sub60Cache {
                 header: header::ETAG,
                 source,
             })?
-            .parse()
+            .parse::<Quoted<Etag>>()
+            .map(|Quoted(etag)| etag)
             .map_err(CacheRequestError::ParseEtag)
+    }
+}
+
+impl CacheRequestError {
+    async fn unexpected_response(
+        response: reqwest::Response,
+        method: Method,
+        url: url::Url,
+    ) -> Self {
+        CacheRequestError::UnexpectedResponse {
+            method,
+            status: response.status(),
+            url,
+            body: response.text().await.unwrap_or_else(|err| {
+                format!("<couldn't read response body: {err}>")
+            }),
+        }
     }
 }
 
@@ -249,9 +280,11 @@ impl context::Cache for Sub60Cache {
         &self,
         narinfo_filename: &NarInfoFileName,
     ) -> Result<bool, Self::Error> {
+        let url = self.narinfo_url(narinfo_filename);
+
         let response = self
             .client
-            .head(self.narinfo_url(narinfo_filename))
+            .head(url.clone())
             .send()
             .await
             .map_err(CacheRequestError::Request)?;
@@ -259,11 +292,12 @@ impl context::Cache for Sub60Cache {
         match response.status() {
             StatusCode::OK => Ok(true),
             StatusCode::NOT_FOUND => Ok(false),
-            status => Err(CacheRequestError::UnexpectedResponse {
-                method: Method::HEAD,
-                status,
-                url: self.narinfo_url(narinfo_filename),
-            }),
+            _ => Err(CacheRequestError::unexpected_response(
+                response,
+                Method::HEAD,
+                url,
+            )
+            .await),
         }
     }
 
@@ -282,11 +316,12 @@ impl context::Cache for Sub60Cache {
             .map_err(CacheRequestError::Request)?;
 
         if !response.status().is_success() {
-            return Err(CacheRequestError::UnexpectedResponse {
-                method: Method::POST,
-                status: response.status(),
+            return Err(CacheRequestError::unexpected_response(
+                response,
+                Method::POST,
                 url,
-            });
+            )
+            .await);
         }
 
         let body = response
@@ -398,12 +433,26 @@ impl context::Cache for Sub60Cache {
         if response.status().is_success() {
             Ok(narinfo_size)
         } else {
-            Err(CacheRequestError::UnexpectedResponse {
-                method: Method::PUT,
-                status: response.status(),
+            Err(CacheRequestError::unexpected_response(
+                response,
+                Method::PUT,
                 url,
-            })
+            )
+            .await)
         }
+    }
+}
+
+impl<T: FromStr> FromStr for Quoted<T> {
+    type Err = QuotedFromStrError<T::Err>;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.strip_prefix('"')
+            .and_then(|s| s.strip_suffix('"'))
+            .ok_or(QuotedFromStrError::MissingQuotes)?
+            .parse()
+            .map(Self)
+            .map_err(QuotedFromStrError::Inner)
     }
 }
 
@@ -420,7 +469,7 @@ impl fmt::Display for CacheConnectError {
 impl fmt::Display for CacheRequestError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::ParseEtag(err) => write!(f, "couldn't parse ETag: {err}"),
+            Self::ParseEtag(err) => write!(f, "couldn't parse Etag: {err}"),
             Self::InvalidResponseHeader { method, url, header, source } => {
                 write!(
                     f,
@@ -441,8 +490,12 @@ impl fmt::Display for CacheRequestError {
             Self::TooManyNarParts => {
                 write!(f, "NAR upload has too many multipart parts")
             },
-            Self::UnexpectedResponse { method, status, url } => {
-                write!(f, "unexpected response from {method} {url}: {status}")
+            Self::UnexpectedResponse { method, status, url, body } => {
+                write!(f, "unexpected response from {method} {url}: {status}")?;
+                if !body.is_empty() {
+                    write!(f, ": {body}")?;
+                }
+                Ok(())
             },
         }
     }
@@ -461,6 +514,28 @@ impl core::error::Error for CacheRequestError {
             Self::ReadNar(err) => Some(err),
             Self::Request(err) => Some(err),
             Self::TooManyNarParts | Self::UnexpectedResponse { .. } => None,
+        }
+    }
+}
+
+impl<T: fmt::Display> fmt::Display for QuotedFromStrError<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingQuotes => {
+                write!(f, "value must be wrapped in double quotes")
+            },
+            Self::Inner(err) => err.fmt(f),
+        }
+    }
+}
+
+impl<T: core::error::Error + 'static> core::error::Error
+    for QuotedFromStrError<T>
+{
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        match self {
+            Self::MissingQuotes => None,
+            Self::Inner(err) => Some(err),
         }
     }
 }
