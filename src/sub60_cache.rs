@@ -1,6 +1,6 @@
-use core::fmt;
 use core::num::{NonZeroU16, NonZeroU32};
 use core::pin::pin;
+use core::{fmt, iter};
 use std::collections::VecDeque;
 use std::io;
 use std::sync::LazyLock;
@@ -319,10 +319,11 @@ impl context::Cache for Sub60Cache {
         loop {
             let Some(part_url) = state.part_urls.pop_front() else {
                 let new_part_numbers =
-                    (part_number..part_number.saturating_add(4)).collect();
-                if new_part_numbers.is_empty() {
-                    return Err(CacheRequestError::TooManyNarParts);
-                }
+                    iter::successors(Some(part_number), |part_number| {
+                        part_number.checked_add(1)
+                    })
+                    .take(4)
+                    .collect::<SmallVec<_>>();
                 let new_urls = self
                     .request_part_urls(
                         &state.upload_id,
