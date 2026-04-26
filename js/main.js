@@ -195,12 +195,7 @@ const releaseAssetRequest = async (assetName, githubToken) => {
  * @param {string} url
  * @param {string} destinationPath
  * @param {Record<string, string>} [headers]
- * @returns {Promise<{
- *   bytes: number,
- *   contentLength: string | null,
- *   fetchMs: number,
- *   writeMs: number,
- * }>}
+ * @returns {Promise<void>}
  */
 const downloadFile = async (url, destinationPath, headers = {}) => {
   const response = await fetch(url, {
@@ -218,24 +213,9 @@ const downloadFile = async (url, destinationPath, headers = {}) => {
     throw new Error(`Download response for '${url}' did not contain a body`);
   }
 
-  let bytes = 0;
-  const input = Readable.fromWeb(response.body);
-  input.on("data", (chunk) => {
-    bytes += chunk.length;
-  });
-
   const output = fs.createWriteStream(destinationPath, { mode: 0o755 });
-  const writeStartedAt = now();
-  input.pipe(output);
   await finished(output);
   await fsp.chmod(destinationPath, 0o755);
-
-  return {
-    bytes,
-    contentLength: response.headers.get("content-length"),
-    fetchMs,
-    writeMs: elapsedMs(writeStartedAt),
-  };
 };
 
 /**
