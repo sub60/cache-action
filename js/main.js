@@ -17,6 +17,12 @@ const {
 const binaryName = "cache-action";
 
 /**
+ * @typedef {{ name: string, commit?: { sha?: string } }} GitHubTag
+ * @typedef {{ name: string, url: string }} GitHubReleaseAsset
+ * @typedef {{ tag_name: string, assets: GitHubReleaseAsset[] }} GitHubRelease
+ */
+
+/**
  * @param {string} name
  * @returns {string}
  */
@@ -34,10 +40,12 @@ const requiredEnv = (name) => {
  * @returns {string}
  */
 const platformAssetTarget = () => {
-  const arch = {
+  const archByNodeArch = /** @type {Record<string, string>} */ ({
     x64: "x86_64",
     arm64: "aarch64",
-  }[os.arch()];
+  });
+
+  const arch = archByNodeArch[os.arch()];
 
   if (!arch || !["linux", "darwin"].includes(process.platform)) {
     throw new Error(
@@ -61,10 +69,10 @@ const isCommitSha = (ref) => {
  * @returns {Record<string, string>}
  */
 const githubApiHeaders = (githubToken) => {
-  const headers = {
+  const headers = /** @type {Record<string, string>} */ ({
     accept: "application/vnd.github+json",
     "x-github-api-version": "2022-11-28",
-  };
+  });
 
   if (githubToken) {
     headers.authorization = `Bearer ${githubToken}`;
@@ -97,7 +105,7 @@ const tagForCommit = async (actionRepository, commitSha, githubToken) => {
       );
     }
 
-    const tags = await response.json();
+    const tags = /** @type {GitHubTag[]} */ (await response.json());
 
     if (tags.length === 0) {
       return null;
@@ -172,7 +180,7 @@ const releaseAssetRequest = async (assetName, githubToken) => {
     );
   }
 
-  const release = await response.json();
+  const release = /** @type {GitHubRelease} */ (await response.json());
   const asset = release.assets.find(({ name }) => name === assetName);
 
   if (!asset) {
