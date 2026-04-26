@@ -43,6 +43,7 @@ enum StartError {
     ConnectToCache(crate::sub60_cache::CacheConnectError),
     CreatePipe(nix::Error),
     DaemonDidntStart,
+    DaemonStartupError(String),
     ForkProcess(nix::Error),
     OpenNixStore(nixb::Error),
 }
@@ -60,19 +61,6 @@ pub(crate) fn start(args: StartArgs) {
 }
 
 fn start_inner(args: StartArgs) -> Result<(), StartError> {
-    let cache = cfg_select! {
-        feature = "noop-cache" => crate::noop_cache::NoopCache::default(),
-        feature = "sub60-cache" => {
-            futures::executor::block_on(crate::sub60_cache::Sub60Cache::connect(
-                args.user,
-                args.cache,
-                args.auth_token,
-            ))
-            .map_err(StartError::ConnectToCache)?
-        },
-        _ => unreachable!(),
-    };
-
     let std_listener =
         StdUnixListener::bind(&args.socket).map_err(StartError::BindSocket)?;
 
@@ -91,10 +79,27 @@ fn start_inner(args: StartArgs) -> Result<(), StartError> {
             drop(write_fd);
 
             // Block until the child signals readiness.
-            match unistd::read(&read_fd, &mut [0u8; 2]) {
-                Ok(1) => {},
+            let mut status = [0];
+            match unistd::read(&read_fd, &mut status) {
+                Ok(1) if status[0] == 0 => {},
+                Ok(1) if status[0] == 1 => {
+                    let mut message = Vec::new();
+                    let mut buf = [0; 1024];
+
+                    loop {
+                        match unistd::read(&read_fd, &mut buf) {
+                            Ok(0) => break,
+                            Ok(n) => message.extend_from_slice(&buf[..n]),
+                            Err(_) => return Err(StartError::DaemonDidntStart),
+                        }
+                    }
+
+                    return Err(StartError::DaemonStartupError(
+                        String::from_utf8_lossy(&message).into_owned(),
+                    ));
+                },
                 Ok(0) | Err(_) => return Err(StartError::DaemonDidntStart),
-                Ok(_more_than_one) => unreachable!("child writes 1 byte"),
+                _ => unreachable!(),
             }
 
             let socket_path =
@@ -112,6 +117,28 @@ fn start_inner(args: StartArgs) -> Result<(), StartError> {
             // We only write to the parent process.
             drop(read_fd);
 
+            let cache = match cfg_select! {
+                feature = "noop-cache" => Ok::<_, StartError>(crate::noop_cache::NoopCache::default()),
+                feature = "sub60-cache" => {
+                    futures::executor::block_on(crate::sub60_cache::Sub60Cache::connect(
+                        args.user,
+                        args.cache,
+                        args.auth_token,
+                    ))
+                    .map_err(StartError::ConnectToCache)
+                },
+                _ => unreachable!(),
+            } {
+                Ok(cache) => cache,
+                Err(error) => {
+                    let error = error.to_string();
+                    let _ = unistd::write(&write_fd, &[1]);
+                    let _ = unistd::write(&write_fd, error.as_bytes());
+                    drop(write_fd);
+                    process::exit(1);
+                },
+            };
+
             let tokio = Tokio::new();
 
             let mut context = RealContext::new(nix_store, tokio.spawner());
@@ -128,7 +155,7 @@ fn start_inner(args: StartArgs) -> Result<(), StartError> {
                     );
 
                 // Signal to the parent that we're ready.
-                let _ = unistd::write(&write_fd, &[1]);
+                let _ = unistd::write(&write_fd, &[0]);
                 drop(write_fd);
 
                 event_loop::run(cache, UnixStreams { listener }, &mut context)
@@ -199,6 +226,7 @@ impl fmt::Display for StartError {
             Self::DaemonDidntStart => {
                 write!(f, "Couldn't start daemon")
             },
+            Self::DaemonStartupError(message) => f.write_str(message),
             Self::ForkProcess(error) => {
                 write!(f, "Couldn't fork process: {error}")
             },
