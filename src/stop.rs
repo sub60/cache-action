@@ -13,7 +13,7 @@ use crate::protocol;
 use crate::tokio::Tokio;
 
 #[derive(Debug, clap::Args)]
-pub struct DrainArgs {
+pub struct StopArgs {
     #[arg(long)]
     socket: PathBuf,
 }
@@ -23,7 +23,7 @@ enum DrainError {
     WriteMessage(io::Error),
 }
 
-pub(crate) fn drain(args: DrainArgs) {
+pub(crate) fn stop(args: StopArgs) {
     let drain_result: Result<(), DrainError> =
         Tokio::new().block_on(async move {
             let socket = UnixStream::connect(&args.socket)
