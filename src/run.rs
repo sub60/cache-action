@@ -6,20 +6,18 @@ use core::task::{Context, Poll};
 use std::fs::File;
 use std::io::Write;
 use std::os::fd::{FromRawFd, RawFd};
-use std::os::unix::net::UnixListener as StdUnixListener;
 use std::path::PathBuf;
-use std::time::Instant;
-use std::{env, fs, io, process};
+use std::{io, process};
 
 use async_compat::Compat;
 use futures::Stream;
 use futures::stream::FusedStream;
-use tokio::net::{UnixListener as TokioUnixListener, UnixStream};
+use tokio::net::{UnixListener, UnixStream};
 
 use crate::event_loop;
 use crate::nix_store::NixStore;
 use crate::real_context::RealContext;
-use crate::tokio::Tokio;
+use crate::tokio::{Tokio, TokioSpawner};
 
 #[derive(Debug, clap::Args)]
 pub struct RunArgs {
@@ -44,98 +42,78 @@ pub struct RunArgs {
 
 enum StartError {
     BindSocket(io::Error),
-    CanonicalizeSocketPath(PathBuf, io::Error),
     #[cfg(feature = "sub60-cache")]
     ConnectToCache(crate::sub60_cache::CacheConnectError),
     OpenNixStore(nixb::Error),
-    SignalReadiness(io::Error),
 }
 
-/// A [`Stream`] of accepted connections from a [`TokioUnixListener`].
+/// A [`Stream`] of accepted connections from a [`UnixListener`].
 struct UnixStreams {
-    listener: TokioUnixListener,
+    listener: UnixListener,
 }
 
 pub(crate) fn run(args: RunArgs) {
+    let tokio = Tokio::new();
+
     let ready_fd = args.ready_fd;
 
-    if let Err(start_error) = start(args) {
-        if let Some(ready_fd) = ready_fd
-            && !matches!(start_error, StartError::SignalReadiness(_))
-        {
-            let _ = write_ready_status(ready_fd, Err(start_error.to_string()));
-        } else {
-            eprintln!("{start_error}");
-        }
+    let start_res = tokio.block_on(start(args, tokio.spawner()));
 
-        process::exit(1);
+    if let Some(ready_fd) = ready_fd {
+        let mut ready_file = unsafe { File::from_raw_fd(ready_fd) };
+
+        let mut signal_readiness = || match &start_res {
+            Ok(_) => ready_file.write_all(&[0]),
+            Err(start_error) => {
+                ready_file.write_all(&[1])?;
+                ready_file.write_all(start_error.to_string().as_bytes())
+            },
+        };
+
+        if let Err(io_err) = signal_readiness() {
+            eprintln!("Couldn't write to file descriptor {ready_fd}: {io_err}");
+        }
+    }
+
+    match start_res {
+        Ok(run_event_loop) => tokio.block_on(run_event_loop),
+        Err(start_error) => {
+            if ready_fd.is_none() {
+                eprintln!("{start_error}");
+            }
+            process::exit(1);
+        },
     }
 }
 
-fn start(args: RunArgs) -> Result<(), StartError> {
-    let std_listener =
-        StdUnixListener::bind(&args.socket).map_err(StartError::BindSocket)?;
+async fn start(
+    args: RunArgs,
+    spawner: TokioSpawner,
+) -> Result<impl Future<Output = ()> + use<>, StartError> {
+    let listener =
+        UnixListener::bind(&args.socket).map_err(StartError::BindSocket)?;
 
     let nix_store = NixStore::open().map_err(StartError::OpenNixStore)?;
 
     let cache = cfg_select! {
         feature = "noop-cache" => crate::noop_cache::NoopCache::default(),
         feature = "sub60-cache" => {
-            futures::executor::block_on(crate::sub60_cache::Sub60Cache::connect(
+            crate::sub60_cache::Sub60Cache::connect(
                 args.user,
                 args.cache,
                 args.auth_token,
-            ))
+            )
+            .await
             .map_err(StartError::ConnectToCache)?
         },
         _ => unreachable!(),
     };
 
-    let tokio = Tokio::new();
+    let mut ctx = RealContext::new(nix_store, spawner);
 
-    let mut context = RealContext::new(nix_store, tokio.spawner());
-
-    std_listener
-        .set_nonblocking(true)
-        .expect("couldn't set socket to non-blocking");
-
-    let listener = TokioUnixListener::from_std(std_listener)
-        .expect("couldn't convert std's UnixListener to tokio's UnixListener");
-
-    let socket_path = fs::canonicalize(&args.socket)
-        .map_err(|err| StartError::CanonicalizeSocketPath(args.socket, err))?;
-
-    if let Some(ready_fd) = args.ready_fd {
-        write_ready_status(ready_fd, Ok(()))
-            .map_err(StartError::SignalReadiness)?;
-    } else {
-        println!("Started daemon, listening on {}", socket_path.display());
-    }
-
-    tokio.block_on(async {
-        event_loop::run(cache, UnixStreams { listener }, &mut context).await;
-    });
-
-    Ok(())
-}
-
-fn write_ready_status(
-    ready_fd: RawFd,
-    status: Result<(), String>,
-) -> io::Result<()> {
-    // SAFETY: `--ready-fd` is only used by the JS action, which passes an open
-    // pipe fd that this process owns and should close after writing status.
-    let mut ready_file = unsafe { File::from_raw_fd(ready_fd) };
-
-    match status {
-        Ok(()) => ready_file.write_all(&[0])?,
-        Err(message) => {
-            ready_file.write_all(&[1])?;
-            ready_file.write_all(message.as_bytes())?;
-        },
-    }
-
-    Ok(())
+    Ok(async move {
+        event_loop::run(cache, UnixStreams { listener }, &mut ctx).await;
+    })
 }
 
 impl Stream for UnixStreams {
@@ -182,20 +160,10 @@ impl fmt::Display for StartError {
             Self::BindSocket(io_error) => {
                 write!(f, "Couldn't bind to Unix domain socket: {io_error}")
             },
-            Self::CanonicalizeSocketPath(path, io_err) => {
-                write!(
-                    f,
-                    "Couldn't canonicalize '{}': {io_err}",
-                    path.display()
-                )
-            },
             #[cfg(feature = "sub60-cache")]
             Self::ConnectToCache(error) => error.fmt(f),
             Self::OpenNixStore(error) => {
                 write!(f, "Couldn't open Nix store: {error}")
-            },
-            Self::SignalReadiness(error) => {
-                write!(f, "Couldn't signal daemon readiness: {error}")
             },
         }
     }

@@ -529,6 +529,10 @@ const main = async () => {
   }
 
   await waitForDaemonReady(child);
+
+  // TODO: print this:
+  // Started daemon with process ID 2400, listening on /home/runner/work/_temp/sub60-cache-action-hWjjZv/daemon.sock
+
   child.unref();
 
   timings.add("start daemon", elapsedMs(daemonStartedAt));
