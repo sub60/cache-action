@@ -16,6 +16,84 @@ const {
 
 const binaryName = "cache-action";
 
+const now = () => performance.now();
+
+/**
+ * @param {number} startedAt
+ * @returns {number}
+ */
+const elapsedMs = (startedAt) => now() - startedAt;
+
+/**
+ * @param {number} ms
+ * @returns {string}
+ */
+const formatMs = (ms) => `${Math.round(ms)}ms`;
+
+/**
+ * @param {number} bytes
+ * @returns {string}
+ */
+const formatBytes = (bytes) => {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KiB`;
+  }
+
+  return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
+};
+
+/**
+ * @param {string} value
+ * @returns {boolean}
+ */
+const inputBool = (value) => {
+  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+};
+
+class Timings {
+  /**
+   * @param {boolean} enabled
+   */
+  constructor(enabled) {
+    this.enabled = enabled;
+    /** @type {{ label: string, ms: number, detail?: string }[]} */
+    this.entries = [];
+  }
+
+  /**
+   * @param {string} label
+   * @param {number} ms
+   * @param {string} [detail]
+   */
+  add(label, ms, detail) {
+    this.entries.push({ label, ms, detail });
+
+    if (this.enabled) {
+      core.info(
+        `cache-action timing: ${label}: ${formatMs(ms)}${detail ? ` (${detail})` : ""}`,
+      );
+    }
+  }
+
+  /**
+   * @param {number} totalMs
+   */
+  summary(totalMs) {
+    if (!this.enabled) {
+      return;
+    }
+
+    const entries = this.entries
+      .map(({ label, ms }) => `${label} ${formatMs(ms)}`)
+      .join(", ");
+    core.info(`cache-action timing: total ${formatMs(totalMs)} (${entries})`);
+  }
+}
+
 /**
  * @typedef {{ name: string, commit?: { sha?: string } }} GitHubTag
  * @typedef {{ name: string, url: string }} GitHubReleaseAsset
@@ -203,13 +281,20 @@ const releaseAssetRequest = async (assetName, githubToken) => {
  * @param {string} url
  * @param {string} destinationPath
  * @param {Record<string, string>} [headers]
- * @returns {Promise<void>}
+ * @returns {Promise<{
+ *   bytes: number,
+ *   contentLength: string | null,
+ *   fetchMs: number,
+ *   writeMs: number,
+ * }>}
  */
 const downloadFile = async (url, destinationPath, headers = {}) => {
+  const fetchStartedAt = now();
   const response = await fetch(url, {
     redirect: "follow",
     headers,
   });
+  const fetchMs = elapsedMs(fetchStartedAt);
 
   if (!response.ok) {
     throw new Error(
@@ -221,10 +306,24 @@ const downloadFile = async (url, destinationPath, headers = {}) => {
     throw new Error(`Download response for '${url}' did not contain a body`);
   }
 
+  let bytes = 0;
+  const input = Readable.fromWeb(response.body);
+  input.on("data", (chunk) => {
+    bytes += chunk.length;
+  });
+
   const output = fs.createWriteStream(destinationPath, { mode: 0o755 });
-  Readable.fromWeb(response.body).pipe(output);
+  const writeStartedAt = now();
+  input.pipe(output);
   await finished(output);
   await fsp.chmod(destinationPath, 0o755);
+
+  return {
+    bytes,
+    contentLength: response.headers.get("content-length"),
+    fetchMs,
+    writeMs: elapsedMs(writeStartedAt),
+  };
 };
 
 /**
@@ -359,15 +458,20 @@ const waitForDaemonReady = async (child) => {
  * @returns {Promise<void>}
  */
 const main = async () => {
+  const totalStartedAt = now();
   const authToken = core.getInput("auth-token", { required: true });
+  const debugTiming = inputBool(core.getInput("debug-timing"));
   const githubToken = core.getInput("github-token");
   const user = core.getInput("user", { required: true });
   const cache = core.getInput("cache", { required: true });
+  const timings = new Timings(debugTiming);
   const target = platformAssetTarget();
   const runnerTemp = process.env.RUNNER_TEMP || os.tmpdir();
+  const tempDirStartedAt = now();
   const daemonDir = await fsp.mkdtemp(
     path.join(runnerTemp, "sub60-cache-action-"),
   );
+  timings.add("create temp dir", elapsedMs(tempDirStartedAt));
   const socketPath = path.join(daemonDir, "daemon.sock");
   const binaryPath = path.join(daemonDir, binaryName);
   const hookPath = path.join(daemonDir, "post-build-hook.sh");
@@ -375,19 +479,37 @@ const main = async () => {
   const daemonLogPath = path.join(daemonDir, "daemon.log");
   const assetName = `${binaryName}-${target}`;
 
+  const releaseStartedAt = now();
   const { url, headers } = await releaseAssetRequest(assetName, githubToken);
+  timings.add(
+    "resolve release asset",
+    elapsedMs(releaseStartedAt),
+    githubToken ? "GitHub API" : "direct release URL",
+  );
 
   core.info(`Downloading '${assetName}' from '${url}'`);
-  await downloadFile(url, binaryPath, headers);
+  const downloadStartedAt = now();
+  const download = await downloadFile(url, binaryPath, headers);
+  const contentLength = download.contentLength
+    ? `${download.contentLength} B content-length`
+    : "no content-length";
+  timings.add(
+    "download binary",
+    elapsedMs(downloadStartedAt),
+    `${formatBytes(download.bytes)}, ${contentLength}, headers ${formatMs(download.fetchMs)}, body ${formatMs(download.writeMs)}`,
+  );
 
   core.saveState(STATE_SOCKET_PATH, socketPath);
   core.saveState(STATE_BINARY_PATH, binaryPath);
   core.saveState(STATE_DAEMON_LOG_PATH, daemonLogPath);
 
+  const configStartedAt = now();
   await writeHookScript(hookPath, binaryPath, socketPath);
   await writeNixConfig(configPath, hookPath);
   core.exportVariable("NIX_USER_CONF_FILES", mergedUserConfFiles(configPath));
+  timings.add("write action config", elapsedMs(configStartedAt));
 
+  const spawnStartedAt = now();
   const daemonLogFd = fs.openSync(daemonLogPath, "a");
   let child;
   try {
@@ -414,14 +536,20 @@ const main = async () => {
   } finally {
     fs.closeSync(daemonLogFd);
   }
+  timings.add("spawn daemon", elapsedMs(spawnStartedAt));
 
+  const readinessStartedAt = now();
   await waitForDaemonReady(child);
+  timings.add("wait for daemon readiness", elapsedMs(readinessStartedAt));
 
+  const startupMessageStartedAt = now();
   core.info(
     `Started daemon with process ID ${child.pid}, listening on ${socketPath}`,
   );
+  timings.add("print startup message", elapsedMs(startupMessageStartedAt));
 
   child.unref();
+  timings.summary(elapsedMs(totalStartedAt));
 };
 
 main().catch((error) => {
