@@ -102,7 +102,7 @@ pub(crate) async fn run<Ctx: Context>(
 
     let mut store_closures = FuturesUnordered::new();
     let mut handle_store_paths = FuturesUnordered::new();
-    let mut handled_store_hashes = HashSet::new();
+    let mut seen_store_hashes = HashSet::new();
 
     let mut report = ActionReport::<Ctx>::default();
 
@@ -130,8 +130,8 @@ pub(crate) async fn run<Ctx: Context>(
                 match closure_res {
                     Ok(store_paths) => {
                         for path in store_paths {
-                            // Skip this path if it's already been handled.
-                            if handled_store_hashes.contains(path.hash()) {
+                            // Skip handling this path if we've already seen it.
+                            if !seen_store_hashes.insert(*path.hash()) {
                                 continue;
                             }
                             let cache = cache.clone();
@@ -149,7 +149,6 @@ pub(crate) async fn run<Ctx: Context>(
                 }
             },
             (result, path) = handle_store_paths.select_next_some() => {
-                handled_store_hashes.insert(*path.hash());
                 match result {
                     Ok(Some(num_bytes)) => {
                         report.num_bytes_pushed += u64::from(num_bytes);
