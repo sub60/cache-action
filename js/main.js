@@ -373,7 +373,8 @@ const main = async () => {
   const daemonLogPath = path.join(daemonDir, "daemon.log");
   const target = platformAssetTarget();
   const assetName = `${BINARY_NAME}-${target}.gz`;
-  const actionRef = requiredEnv("GITHUB_ACTION_REF");
+  const actionRef =
+    core.getInput("action-ref") || requiredEnv("GITHUB_ACTION_REF");
 
   if (IS_PRIVATE && !githubToken) {
     throw new Error(

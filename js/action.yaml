@@ -5,6 +5,8 @@ inputs:
     required: true
   github-token:
     required: false
+  action-ref:
+    required: false
   user:
     required: true
   cache:

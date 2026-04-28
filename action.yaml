@@ -3,12 +3,6 @@ name: "sub60's cache action"
 description: "Sets up and drains the sub60 Nix cache uploader"
 
 inputs:
-  auth-token:
-    description: "The authentication token used to push store paths"
-    required: true
-  github-token:
-    description: "GitHub token used to download release artifacts from private repos"
-    required: false
   user:
     description: "The sub60 cache user"
     required: false
@@ -17,6 +11,15 @@ inputs:
     description: "The sub60 cache name"
     required: false
     default: ${{ github.event.repository.name }}
+  auth-token:
+    description: "The authentication token used to push store paths"
+    required: true
+  github-token:
+    description: "GitHub token used to download release artifacts from private repos"
+    required: false
+  action-ref:
+    description: "The cache-action release tag to download when using a vendored checkout"
+    required: false
 
 runs:
   using: "composite"
@@ -25,6 +28,7 @@ runs:
       with:
         auth-token: ${{ inputs.auth-token }}
         github-token: ${{ inputs.github-token }}
+        action-ref: ${{ inputs.action-ref }}
         user: ${{ inputs.user }}
         cache: ${{ inputs.cache }}
       env:
