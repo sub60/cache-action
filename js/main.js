@@ -15,9 +15,9 @@ const {
   STATE_SOCKET_PATH,
 } = require("./state");
 
-const binaryName = "cache-action";
-// Remove this assignment once the release asset repository is public.
-const IS_PRIVATE = true;
+const ACTION_REPOSITORY = "sub60/cache-action";
+const BINARY_NAME = "cache-action";
+const IS_PRIVATE = true; // TODO: remove this once the repository is public
 
 const now = () => performance.now();
 
@@ -164,17 +164,16 @@ const githubApiHeaders = (githubToken) => {
 };
 
 /**
- * @param {string} actionRepository
  * @param {string} commitSha
  * @param {string} [githubToken]
  * @returns {Promise<string | null>}
  */
-const tagForCommit = async (actionRepository, commitSha, githubToken) => {
+const tagForCommit = async (commitSha, githubToken) => {
   const apiUrl = requiredEnv("GITHUB_API_URL");
 
   for (let page = 1; ; page += 1) {
     const response = await fetch(
-      `${apiUrl}/repos/${actionRepository}/tags?per_page=100&page=${page}`,
+      `${apiUrl}/repos/${ACTION_REPOSITORY}/tags?per_page=100&page=${page}`,
       {
         headers: githubApiHeaders(githubToken),
         redirect: "follow",
@@ -183,7 +182,7 @@ const tagForCommit = async (actionRepository, commitSha, githubToken) => {
 
     if (!response.ok) {
       throw new Error(
-        `Failed to list tags in '${actionRepository}' while resolving commit '${commitSha}': ${response.status} ${response.statusText}`,
+        `Failed to list tags in '${ACTION_REPOSITORY}' while resolving commit '${commitSha}': ${response.status} ${response.statusText}`,
       );
     }
 
@@ -202,17 +201,16 @@ const tagForCommit = async (actionRepository, commitSha, githubToken) => {
 };
 
 /**
- * @param {string} actionRepository
  * @param {string} actionRef
  * @param {string} [githubToken]
  * @returns {Promise<string>}
  */
-const releaseTag = async (actionRepository, actionRef, githubToken) => {
+const releaseTag = async (actionRef, githubToken) => {
   if (!isCommitSha(actionRef)) {
     return actionRef;
   }
 
-  const tag = await tagForCommit(actionRepository, actionRef, githubToken);
+  const tag = await tagForCommit(actionRef, githubToken);
 
   if (!tag) {
     throw new Error(
@@ -224,18 +222,13 @@ const releaseTag = async (actionRepository, actionRef, githubToken) => {
 };
 
 /**
- * @param {string} actionRepository
  * @param {string} actionRef
  * @param {string} assetName
  * @returns {Promise<AssetRequest>}
  */
-const directReleaseAssetRequest = async (
-  actionRepository,
-  actionRef,
-  assetName,
-) => {
-  const base = `https://github.com/${actionRepository}/releases`;
-  const tag = await releaseTag(actionRepository, actionRef);
+const directReleaseAssetRequest = async (actionRef, assetName) => {
+  const base = `https://github.com/${ACTION_REPOSITORY}/releases`;
+  const tag = await releaseTag(actionRef);
 
   return {
     url: `${base}/download/${tag}/${assetName}`,
@@ -245,21 +238,19 @@ const directReleaseAssetRequest = async (
 };
 
 /**
- * @param {string} actionRepository
  * @param {string} actionRef
  * @param {string} assetName
  * @param {string} [githubToken]
  * @returns {Promise<AssetRequest>}
  */
 const githubApiReleaseAssetRequest = async (
-  actionRepository,
   actionRef,
   assetName,
   githubToken,
 ) => {
   const apiUrl = requiredEnv("GITHUB_API_URL");
-  const tag = await releaseTag(actionRepository, actionRef, githubToken);
-  const releaseUrl = `${apiUrl}/repos/${actionRepository}/releases/tags/${encodeURIComponent(tag)}`;
+  const tag = await releaseTag(actionRef, githubToken);
+  const releaseUrl = `${apiUrl}/repos/${ACTION_REPOSITORY}/releases/tags/${encodeURIComponent(tag)}`;
 
   const response = await fetch(releaseUrl, {
     headers: githubApiHeaders(githubToken),
@@ -268,7 +259,7 @@ const githubApiReleaseAssetRequest = async (
 
   if (!response.ok) {
     throw new Error(
-      `Failed to resolve release in '${actionRepository}': ${response.status} ${response.statusText}`,
+      `Failed to resolve release in '${ACTION_REPOSITORY}': ${response.status} ${response.statusText}`,
     );
   }
 
@@ -277,7 +268,7 @@ const githubApiReleaseAssetRequest = async (
 
   if (!asset) {
     throw new Error(
-      `Release '${release.tag_name}' in '${actionRepository}' does not contain asset '${assetName}'`,
+      `Release '${release.tag_name}' in '${ACTION_REPOSITORY}' does not contain asset '${assetName}'`,
     );
   }
 
@@ -290,14 +281,6 @@ const githubApiReleaseAssetRequest = async (
     },
     source: "GitHub API",
   };
-};
-
-/**
- * @param {string} actionRef
- * @returns {boolean}
- */
-const shouldUseGitHubApiAsset = (actionRef) => {
-  return IS_PRIVATE || isCommitSha(actionRef);
 };
 
 /**
@@ -497,13 +480,11 @@ const main = async () => {
   );
   timings.add("create temp dir", elapsedMs(tempDirStartedAt));
   const socketPath = path.join(daemonDir, "daemon.sock");
-  const binaryPath = path.join(daemonDir, binaryName);
+  const binaryPath = path.join(daemonDir, BINARY_NAME);
   const hookPath = path.join(daemonDir, "post-build-hook.sh");
   const configPath = path.join(daemonDir, "nix.conf");
   const daemonLogPath = path.join(daemonDir, "daemon.log");
-  const assetName = `${binaryName}-${target}.gz`;
-  const actionRepository =
-    process.env.GITHUB_ACTION_REPOSITORY?.trim() || "sub60/cache-action";
+  const assetName = `${BINARY_NAME}-${target}.gz`;
   const actionRef = requiredEnv("GITHUB_ACTION_REF");
 
   const releaseStartedAt = now();
@@ -513,16 +494,10 @@ const main = async () => {
     );
   }
 
-  const useGitHubApiAsset = shouldUseGitHubApiAsset(actionRef);
+  const assetRequest = (IS_PRIVATE || isCommitSha(actionRef))
+    ? await githubApiReleaseAssetRequest(actionRef, assetName, githubToken)
+    : await directReleaseAssetRequest(actionRef, assetName);
 
-  const assetRequest = useGitHubApiAsset
-    ? await githubApiReleaseAssetRequest(
-      actionRepository,
-      actionRef,
-      assetName,
-      githubToken,
-    )
-    : await directReleaseAssetRequest(actionRepository, actionRef, assetName);
   timings.add(
     "resolve release asset",
     elapsedMs(releaseStartedAt),
