@@ -37,13 +37,15 @@ jobs:
         run: nix build ".#${{ matrix.package }}"
 
       - name: Stage artifact
-        run: cp result/bin/cache-action "cache-action-${{ matrix.package }}"
+        run: |
+          cp result/bin/cache-action "cache-action-${{ matrix.package }}"
+          gzip -9n "cache-action-${{ matrix.package }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: cache-action-${{ matrix.package }}
-          path: cache-action-${{ matrix.package }}
+          name: cache-action-${{ matrix.package }}.gz
+          path: cache-action-${{ matrix.package }}.gz
           if-no-files-found: error
 
   publish:
