@@ -7,7 +7,8 @@ const { spawn } = require("node:child_process");
 const os = require("node:os");
 const path = require("node:path");
 const { Readable } = require("node:stream");
-const { finished } = require("node:stream/promises");
+const { pipeline } = require("node:stream/promises");
+const zlib = require("node:zlib");
 const {
   STATE_BINARY_PATH,
   STATE_DAEMON_LOG_PATH,
@@ -98,6 +99,7 @@ class Timings {
  * @typedef {{ name: string, commit?: { sha?: string } }} GitHubTag
  * @typedef {{ name: string, url: string }} GitHubReleaseAsset
  * @typedef {{ tag_name: string, assets: GitHubReleaseAsset[] }} GitHubRelease
+ * @typedef {{ url: string, headers: Record<string, string>, source: string }} AssetRequest
  */
 
 /**
@@ -158,6 +160,25 @@ const githubApiHeaders = (githubToken) => {
 
   return headers;
 };
+
+class DownloadError extends Error {
+  /** @type {number} */
+  status;
+  /** @type {string} */
+  statusText;
+
+  /**
+   * @param {string} url
+   * @param {{ status: number, statusText: string }} response
+   */
+  constructor(url, response) {
+    super(
+      `Failed to download '${url}': ${response.status} ${response.statusText}`,
+    );
+    this.status = response.status;
+    this.statusText = response.statusText;
+  }
+}
 
 /**
  * @param {string} actionRepository
@@ -220,11 +241,28 @@ const releaseTag = async (actionRepository, actionRef, githubToken) => {
 };
 
 /**
- * @param {string} assetName
+ * @param {string} actionRepository
+ * @param {string | undefined} actionRef
  * @param {string} [githubToken]
- * @returns {Promise<{ url: string, headers: Record<string, string> }>}
+ * @returns {Promise<string | null>}
  */
-const releaseAssetRequest = async (assetName, githubToken) => {
+const releaseTagForActionRef = async (
+  actionRepository,
+  actionRef,
+  githubToken,
+) => {
+  if (!actionRef) {
+    return null;
+  }
+
+  return releaseTag(actionRepository, actionRef, githubToken);
+};
+
+/**
+ * @param {string} assetName
+ * @returns {Promise<AssetRequest>}
+ */
+const directReleaseAssetRequest = async (assetName) => {
   const actionRepository =
     process.env.GITHUB_ACTION_REPOSITORY?.trim() || "sub60/cache-action";
 
@@ -232,19 +270,41 @@ const releaseAssetRequest = async (assetName, githubToken) => {
   // no longer needed.
   const actionRef = process.env.GITHUB_ACTION_REF?.trim();
 
-  if (!githubToken) {
-    const base = `https://github.com/${actionRepository}/releases`;
-    const url = actionRef
-      ? `${base}/download/${await releaseTag(actionRepository, actionRef, githubToken)}/${assetName}`
-      : `${base}/latest/download/${assetName}`;
+  const base = `https://github.com/${actionRepository}/releases`;
+  const tag = await releaseTagForActionRef(actionRepository, actionRef);
+  const url = tag
+    ? `${base}/download/${tag}/${assetName}`
+    : `${base}/latest/download/${assetName}`;
 
-    return { url, headers: {} };
-  }
+  return {
+    url,
+    headers: {},
+    source: tag ? "direct release URL" : "direct latest release URL",
+  };
+};
+
+/**
+ * @param {string} assetName
+ * @param {string} githubToken
+ * @returns {Promise<AssetRequest>}
+ */
+const githubApiReleaseAssetRequest = async (assetName, githubToken) => {
+  const actionRepository =
+    process.env.GITHUB_ACTION_REPOSITORY?.trim() || "sub60/cache-action";
+
+  // TODO: remove the fallback once the repo is public and local checkouts are
+  // no longer needed.
+  const actionRef = process.env.GITHUB_ACTION_REF?.trim();
 
   const apiUrl = requiredEnv("GITHUB_API_URL");
 
-  const releaseUrl = actionRef
-    ? `${apiUrl}/repos/${actionRepository}/releases/tags/${encodeURIComponent(await releaseTag(actionRepository, actionRef, githubToken))}`
+  const tag = await releaseTagForActionRef(
+    actionRepository,
+    actionRef,
+    githubToken,
+  );
+  const releaseUrl = tag
+    ? `${apiUrl}/repos/${actionRepository}/releases/tags/${encodeURIComponent(tag)}`
     : `${apiUrl}/repos/${actionRepository}/releases/latest`;
 
   const response = await fetch(releaseUrl, {
@@ -274,6 +334,7 @@ const releaseAssetRequest = async (assetName, githubToken) => {
       authorization: `Bearer ${githubToken}`,
       "x-github-api-version": "2022-11-28",
     },
+    source: "GitHub API",
   };
 };
 
@@ -282,13 +343,14 @@ const releaseAssetRequest = async (assetName, githubToken) => {
  * @param {string} destinationPath
  * @param {Record<string, string>} [headers]
  * @returns {Promise<{
- *   bytes: number,
+ *   compressedBytes: number,
+ *   outputBytes: number,
  *   contentLength: string | null,
  *   fetchMs: number,
  *   writeMs: number,
  * }>}
  */
-const downloadFile = async (url, destinationPath, headers = {}) => {
+const downloadGzipFile = async (url, destinationPath, headers = {}) => {
   const fetchStartedAt = now();
   const response = await fetch(url, {
     redirect: "follow",
@@ -297,29 +359,27 @@ const downloadFile = async (url, destinationPath, headers = {}) => {
   const fetchMs = elapsedMs(fetchStartedAt);
 
   if (!response.ok) {
-    throw new Error(
-      `Failed to download '${url}': ${response.status} ${response.statusText}`,
-    );
+    throw new DownloadError(url, response);
   }
 
   if (!response.body) {
     throw new Error(`Download response for '${url}' did not contain a body`);
   }
 
-  let bytes = 0;
+  let compressedBytes = 0;
   const input = Readable.fromWeb(response.body);
   input.on("data", (chunk) => {
-    bytes += chunk.length;
+    compressedBytes += chunk.length;
   });
 
   const output = fs.createWriteStream(destinationPath, { mode: 0o755 });
   const writeStartedAt = now();
-  input.pipe(output);
-  await finished(output);
+  await pipeline(input, zlib.createGunzip(), output);
   await fsp.chmod(destinationPath, 0o755);
 
   return {
-    bytes,
+    compressedBytes,
+    outputBytes: output.bytesWritten,
     contentLength: response.headers.get("content-length"),
     fetchMs,
     writeMs: elapsedMs(writeStartedAt),
@@ -477,26 +537,32 @@ const main = async () => {
   const hookPath = path.join(daemonDir, "post-build-hook.sh");
   const configPath = path.join(daemonDir, "nix.conf");
   const daemonLogPath = path.join(daemonDir, "daemon.log");
-  const assetName = `${binaryName}-${target}`;
+  const assetName = `${binaryName}-${target}.gz`;
 
   const releaseStartedAt = now();
-  const { url, headers } = await releaseAssetRequest(assetName, githubToken);
+  const assetRequest = githubToken
+    ? await githubApiReleaseAssetRequest(assetName, githubToken)
+    : await directReleaseAssetRequest(assetName);
   timings.add(
     "resolve release asset",
     elapsedMs(releaseStartedAt),
-    githubToken ? "GitHub API" : "direct release URL",
+    assetRequest.source,
   );
 
-  core.info(`Downloading '${assetName}' from '${url}'`);
   const downloadStartedAt = now();
-  const download = await downloadFile(url, binaryPath, headers);
+  core.info(`Downloading '${assetName}' from '${assetRequest.url}'`);
+  const download = await downloadGzipFile(
+    assetRequest.url,
+    binaryPath,
+    assetRequest.headers,
+  );
   const contentLength = download.contentLength
     ? `${download.contentLength} B content-length`
     : "no content-length";
   timings.add(
-    "download binary",
+    "download and decompress binary",
     elapsedMs(downloadStartedAt),
-    `${formatBytes(download.bytes)}, ${contentLength}, headers ${formatMs(download.fetchMs)}, body ${formatMs(download.writeMs)}`,
+    `${formatBytes(download.compressedBytes)} compressed, ${formatBytes(download.outputBytes)} decompressed, ${contentLength}, source ${assetRequest.source}, headers ${formatMs(download.fetchMs)}, body+gunzip ${formatMs(download.writeMs)}`,
   );
 
   core.saveState(STATE_SOCKET_PATH, socketPath);
