@@ -164,23 +164,6 @@ const githubApiHeaders = (githubToken) => {
 };
 
 /**
- * @param {string} [githubToken]
- * @returns {Record<string, string>}
- */
-const githubAssetDownloadHeaders = (githubToken) => {
-  const headers = /** @type {Record<string, string>} */ ({
-    accept: "application/octet-stream",
-    "x-github-api-version": "2022-11-28",
-  });
-
-  if (githubToken) {
-    headers.authorization = `Bearer ${githubToken}`;
-  }
-
-  return headers;
-};
-
-/**
  * @param {string} actionRepository
  * @param {string} commitSha
  * @param {string} [githubToken]
@@ -277,9 +260,11 @@ const githubApiReleaseAssetRequest = async (
   githubToken,
 ) => {
   const apiUrl = requiredEnv("GITHUB_API_URL");
+
   const tag = actionRef
     ? await releaseTag(actionRepository, actionRef, githubToken)
     : null;
+
   const releaseUrl = tag
     ? `${apiUrl}/repos/${actionRepository}/releases/tags/${encodeURIComponent(tag)}`
     : `${apiUrl}/repos/${actionRepository}/releases/latest`;
@@ -306,7 +291,11 @@ const githubApiReleaseAssetRequest = async (
 
   return {
     url: asset.url,
-    headers: githubAssetDownloadHeaders(githubToken),
+    headers: {
+      accept: "application/octet-stream",
+      "x-github-api-version": "2022-11-28",
+      ...(githubToken ? { authorization: `Bearer ${githubToken}` } : {}),
+    },
     source: "GitHub API",
   };
 };
@@ -471,9 +460,9 @@ const waitForDaemonReady = async (child) => {
   );
 
   /** @type {(error: Error) => void} */
-  let onError = () => {};
+  let onError = () => { };
   /** @type {(code: number | null, signal: NodeJS.Signals | null) => void} */
-  let onExit = () => {};
+  let onExit = () => { };
 
   const exitedEarly = new Promise((_, reject) => {
     onError = reject;
@@ -526,20 +515,21 @@ const main = async () => {
   const actionRef = process.env.GITHUB_ACTION_REF?.trim();
 
   const releaseStartedAt = now();
-  const useGitHubApiAsset = shouldUseGitHubApiAsset(actionRef);
   if (IS_PRIVATE && !githubToken) {
     throw new Error(
       "github-token is required to download release assets from the private cache-action repository",
     );
   }
 
+  const useGitHubApiAsset = shouldUseGitHubApiAsset(actionRef);
+
   const assetRequest = useGitHubApiAsset
     ? await githubApiReleaseAssetRequest(
-        actionRepository,
-        actionRef,
-        assetName,
-        githubToken,
-      )
+      actionRepository,
+      actionRef,
+      assetName,
+      githubToken,
+    )
     : await directReleaseAssetRequest(actionRepository, actionRef, assetName);
   timings.add(
     "resolve release asset",
