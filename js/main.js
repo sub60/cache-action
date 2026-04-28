@@ -19,89 +19,10 @@ const ACTION_REPOSITORY = "sub60/cache-action";
 const BINARY_NAME = "cache-action";
 const IS_PRIVATE = true; // TODO: remove this once the repository is public
 
-const now = () => performance.now();
-
-/**
- * @param {number} startedAt
- * @returns {number}
- */
-const elapsedMs = (startedAt) => now() - startedAt;
-
-/**
- * @param {number} ms
- * @returns {string}
- */
-const formatMs = (ms) => `${Math.round(ms)}ms`;
-
-/**
- * @param {number} bytes
- * @returns {string}
- */
-const formatBytes = (bytes) => {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KiB`;
-  }
-
-  return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
-};
-
-/**
- * @param {string} value
- * @returns {boolean}
- */
-const inputBool = (value) => {
-  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
-};
-
-class Timings {
-  /**
-   * @param {boolean} enabled
-   */
-  constructor(enabled) {
-    this.enabled = enabled;
-    /** @type {{ label: string, ms: number, detail?: string }[]} */
-    this.entries = [];
-  }
-
-  /**
-   * @param {string} label
-   * @param {number} ms
-   * @param {string} [detail]
-   */
-  add(label, ms, detail) {
-    this.entries.push({ label, ms, detail });
-
-    if (this.enabled) {
-      core.info(
-        `cache-action timing: ${label}: ${formatMs(ms)}${detail ? ` (${detail})` : ""}`,
-      );
-    }
-  }
-
-  /**
-   * @param {number} totalMs
-   */
-  summary(totalMs) {
-    if (!this.enabled) {
-      return;
-    }
-
-    const entries = this.entries
-      .map(({ label, ms }) => `${label} ${formatMs(ms)}`)
-      .join(", ");
-    core.info(`cache-action timing: total ${formatMs(totalMs)} (${entries})`);
-  }
-}
-
 /**
  * @typedef {{ name: string, commit?: { sha?: string } }} GitHubTag
  * @typedef {{ name: string, url: string }} GitHubReleaseAsset
  * @typedef {{ tag_name: string, assets: GitHubReleaseAsset[] }} GitHubRelease
- * @typedef {{ url: string, headers: Record<string, string>, source: string }} AssetRequest
  */
 
 /**
@@ -224,7 +145,7 @@ const releaseTag = async (actionRef, githubToken) => {
 /**
  * @param {string} actionRef
  * @param {string} assetName
- * @returns {Promise<AssetRequest>}
+ * @returns {Promise<{ url: string, headers: Record<string, string> }>}
  */
 const directReleaseAssetRequest = async (actionRef, assetName) => {
   const base = `https://github.com/${ACTION_REPOSITORY}/releases`;
@@ -233,7 +154,6 @@ const directReleaseAssetRequest = async (actionRef, assetName) => {
   return {
     url: `${base}/download/${tag}/${assetName}`,
     headers: {},
-    source: "direct release URL",
   };
 };
 
@@ -241,7 +161,7 @@ const directReleaseAssetRequest = async (actionRef, assetName) => {
  * @param {string} actionRef
  * @param {string} assetName
  * @param {string} [githubToken]
- * @returns {Promise<AssetRequest>}
+ * @returns {Promise<{ url: string, headers: Record<string, string> }>}
  */
 const githubApiReleaseAssetRequest = async (
   actionRef,
@@ -279,7 +199,6 @@ const githubApiReleaseAssetRequest = async (
       "x-github-api-version": "2022-11-28",
       ...(githubToken ? { authorization: `Bearer ${githubToken}` } : {}),
     },
-    source: "GitHub API",
   };
 };
 
@@ -287,21 +206,13 @@ const githubApiReleaseAssetRequest = async (
  * @param {string} url
  * @param {string} destinationPath
  * @param {Record<string, string>} [headers]
- * @returns {Promise<{
- *   compressedBytes: number,
- *   outputBytes: number,
- *   contentLength: string | null,
- *   fetchMs: number,
- *   writeMs: number,
- * }>}
+ * @returns {Promise<void>}
  */
 const downloadGzipFile = async (url, destinationPath, headers = {}) => {
-  const fetchStartedAt = now();
   const response = await fetch(url, {
     redirect: "follow",
     headers,
   });
-  const fetchMs = elapsedMs(fetchStartedAt);
 
   if (!response.ok) {
     throw new Error(
@@ -313,24 +224,10 @@ const downloadGzipFile = async (url, destinationPath, headers = {}) => {
     throw new Error(`Download response for '${url}' did not contain a body`);
   }
 
-  let compressedBytes = 0;
   const input = Readable.fromWeb(response.body);
-  input.on("data", (chunk) => {
-    compressedBytes += chunk.length;
-  });
-
   const output = fs.createWriteStream(destinationPath, { mode: 0o755 });
-  const writeStartedAt = now();
   await pipeline(input, zlib.createGunzip(), output);
   await fsp.chmod(destinationPath, 0o755);
-
-  return {
-    compressedBytes,
-    outputBytes: output.bytesWritten,
-    contentLength: response.headers.get("content-length"),
-    fetchMs,
-    writeMs: elapsedMs(writeStartedAt),
-  };
 };
 
 /**
@@ -465,20 +362,15 @@ const waitForDaemonReady = async (child) => {
  * @returns {Promise<void>}
  */
 const main = async () => {
-  const totalStartedAt = now();
   const authToken = core.getInput("auth-token", { required: true });
-  const debugTiming = inputBool(core.getInput("debug-timing"));
   const githubToken = core.getInput("github-token");
   const user = core.getInput("user", { required: true });
   const cache = core.getInput("cache", { required: true });
-  const timings = new Timings(debugTiming);
   const target = platformAssetTarget();
   const runnerTemp = process.env.RUNNER_TEMP || os.tmpdir();
-  const tempDirStartedAt = now();
   const daemonDir = await fsp.mkdtemp(
     path.join(runnerTemp, "sub60-cache-action-"),
   );
-  timings.add("create temp dir", elapsedMs(tempDirStartedAt));
   const socketPath = path.join(daemonDir, "daemon.sock");
   const binaryPath = path.join(daemonDir, BINARY_NAME);
   const hookPath = path.join(daemonDir, "post-build-hook.sh");
@@ -487,7 +379,6 @@ const main = async () => {
   const assetName = `${BINARY_NAME}-${target}.gz`;
   const actionRef = requiredEnv("GITHUB_ACTION_REF");
 
-  const releaseStartedAt = now();
   if (IS_PRIVATE && !githubToken) {
     throw new Error(
       "github-token is required to download release assets from the private cache-action repository",
@@ -498,39 +389,21 @@ const main = async () => {
     ? await githubApiReleaseAssetRequest(actionRef, assetName, githubToken)
     : await directReleaseAssetRequest(actionRef, assetName);
 
-  timings.add(
-    "resolve release asset",
-    elapsedMs(releaseStartedAt),
-    assetRequest.source,
-  );
-
-  const downloadStartedAt = now();
   core.info(`Downloading '${assetName}' from '${assetRequest.url}'`);
-  const download = await downloadGzipFile(
+  await downloadGzipFile(
     assetRequest.url,
     binaryPath,
     assetRequest.headers,
-  );
-  const contentLength = download.contentLength
-    ? `${download.contentLength} B content-length`
-    : "no content-length";
-  timings.add(
-    "download and decompress binary",
-    elapsedMs(downloadStartedAt),
-    `${formatBytes(download.compressedBytes)} compressed, ${formatBytes(download.outputBytes)} decompressed, ${contentLength}, source ${assetRequest.source}, headers ${formatMs(download.fetchMs)}, body+gunzip ${formatMs(download.writeMs)}`,
   );
 
   core.saveState(STATE_SOCKET_PATH, socketPath);
   core.saveState(STATE_BINARY_PATH, binaryPath);
   core.saveState(STATE_DAEMON_LOG_PATH, daemonLogPath);
 
-  const configStartedAt = now();
   await writeHookScript(hookPath, binaryPath, socketPath);
   await writeNixConfig(configPath, hookPath);
   core.exportVariable("NIX_USER_CONF_FILES", mergedUserConfFiles(configPath));
-  timings.add("write action config", elapsedMs(configStartedAt));
 
-  const spawnStartedAt = now();
   const daemonLogFd = fs.openSync(daemonLogPath, "a");
   let child;
   try {
@@ -557,20 +430,14 @@ const main = async () => {
   } finally {
     fs.closeSync(daemonLogFd);
   }
-  timings.add("spawn daemon", elapsedMs(spawnStartedAt));
 
-  const readinessStartedAt = now();
   await waitForDaemonReady(child);
-  timings.add("wait for daemon readiness", elapsedMs(readinessStartedAt));
 
-  const startupMessageStartedAt = now();
   core.info(
     `Started daemon with process ID ${child.pid}, listening on ${socketPath}`,
   );
-  timings.add("print startup message", elapsedMs(startupMessageStartedAt));
 
   child.unref();
-  timings.summary(elapsedMs(totalStartedAt));
 };
 
 main().catch((error) => {

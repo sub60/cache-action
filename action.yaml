@@ -17,10 +17,6 @@ inputs:
     description: "The sub60 cache name"
     required: false
     default: ${{ github.event.repository.name }}
-  debug-timing:
-    description: "Print setup timing breakdowns in the action logs"
-    required: false
-    default: "false"
 
 runs:
   using: "composite"
@@ -31,7 +27,6 @@ runs:
         github-token: ${{ inputs.github-token }}
         user: ${{ inputs.user }}
         cache: ${{ inputs.cache }}
-        debug-timing: ${{ inputs.debug-timing }}
       env:
         GITHUB_ACTION_REF: ${{ github.action_ref }}
         GITHUB_ACTION_REPOSITORY: ${{ github.action_repository }}
