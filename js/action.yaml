@@ -7,6 +7,8 @@ inputs:
     required: false
   action-ref:
     required: false
+  debug-timing:
+    required: false
   user:
     required: true
   cache:

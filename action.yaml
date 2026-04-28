@@ -20,6 +20,10 @@ inputs:
   action-ref:
     description: "The cache-action release tag to download when using a vendored checkout"
     required: false
+  debug-timing:
+    description: "Print setup timing breakdowns in the action logs"
+    required: false
+    default: "false"
 
 runs:
   using: "composite"
@@ -29,6 +33,7 @@ runs:
         auth-token: ${{ inputs.auth-token }}
         github-token: ${{ inputs.github-token }}
         action-ref: ${{ inputs.action-ref }}
+        debug-timing: ${{ inputs.debug-timing }}
         user: ${{ inputs.user }}
         cache: ${{ inputs.cache }}
       env:
