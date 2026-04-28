@@ -225,7 +225,7 @@ const releaseTag = async (actionRepository, actionRef, githubToken) => {
 
 /**
  * @param {string} actionRepository
- * @param {string | undefined} actionRef
+ * @param {string} actionRef
  * @param {string} assetName
  * @returns {Promise<AssetRequest>}
  */
@@ -235,20 +235,18 @@ const directReleaseAssetRequest = async (
   assetName,
 ) => {
   const base = `https://github.com/${actionRepository}/releases`;
-  const tag = actionRef ? await releaseTag(actionRepository, actionRef) : null;
+  const tag = await releaseTag(actionRepository, actionRef);
 
   return {
-    url: tag
-      ? `${base}/download/${tag}/${assetName}`
-      : `${base}/latest/download/${assetName}`,
+    url: `${base}/download/${tag}/${assetName}`,
     headers: {},
-    source: tag ? "direct release URL" : "direct latest release URL",
+    source: "direct release URL",
   };
 };
 
 /**
  * @param {string} actionRepository
- * @param {string | undefined} actionRef
+ * @param {string} actionRef
  * @param {string} assetName
  * @param {string} [githubToken]
  * @returns {Promise<AssetRequest>}
@@ -260,14 +258,8 @@ const githubApiReleaseAssetRequest = async (
   githubToken,
 ) => {
   const apiUrl = requiredEnv("GITHUB_API_URL");
-
-  const tag = actionRef
-    ? await releaseTag(actionRepository, actionRef, githubToken)
-    : null;
-
-  const releaseUrl = tag
-    ? `${apiUrl}/repos/${actionRepository}/releases/tags/${encodeURIComponent(tag)}`
-    : `${apiUrl}/repos/${actionRepository}/releases/latest`;
+  const tag = await releaseTag(actionRepository, actionRef, githubToken);
+  const releaseUrl = `${apiUrl}/repos/${actionRepository}/releases/tags/${encodeURIComponent(tag)}`;
 
   const response = await fetch(releaseUrl, {
     headers: githubApiHeaders(githubToken),
@@ -301,11 +293,11 @@ const githubApiReleaseAssetRequest = async (
 };
 
 /**
- * @param {string | undefined} actionRef
+ * @param {string} actionRef
  * @returns {boolean}
  */
 const shouldUseGitHubApiAsset = (actionRef) => {
-  return IS_PRIVATE || Boolean(actionRef && isCommitSha(actionRef));
+  return IS_PRIVATE || isCommitSha(actionRef);
 };
 
 /**
@@ -512,7 +504,7 @@ const main = async () => {
   const assetName = `${binaryName}-${target}.gz`;
   const actionRepository =
     process.env.GITHUB_ACTION_REPOSITORY?.trim() || "sub60/cache-action";
-  const actionRef = process.env.GITHUB_ACTION_REF?.trim();
+  const actionRef = requiredEnv("GITHUB_ACTION_REF");
 
   const releaseStartedAt = now();
   if (IS_PRIVATE && !githubToken) {
