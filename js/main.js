@@ -16,6 +16,8 @@ const {
 } = require("./state");
 
 const binaryName = "cache-action";
+// Remove this assignment once the release asset repository is public.
+const IS_PRIVATE = true;
 
 const now = () => performance.now();
 
@@ -161,24 +163,22 @@ const githubApiHeaders = (githubToken) => {
   return headers;
 };
 
-class DownloadError extends Error {
-  /** @type {number} */
-  status;
-  /** @type {string} */
-  statusText;
+/**
+ * @param {string} [githubToken]
+ * @returns {Record<string, string>}
+ */
+const githubAssetDownloadHeaders = (githubToken) => {
+  const headers = /** @type {Record<string, string>} */ ({
+    accept: "application/octet-stream",
+    "x-github-api-version": "2022-11-28",
+  });
 
-  /**
-   * @param {string} url
-   * @param {{ status: number, statusText: string }} response
-   */
-  constructor(url, response) {
-    super(
-      `Failed to download '${url}': ${response.status} ${response.statusText}`,
-    );
-    this.status = response.status;
-    this.statusText = response.statusText;
+  if (githubToken) {
+    headers.authorization = `Bearer ${githubToken}`;
   }
-}
+
+  return headers;
+};
 
 /**
  * @param {string} actionRepository
@@ -243,66 +243,43 @@ const releaseTag = async (actionRepository, actionRef, githubToken) => {
 /**
  * @param {string} actionRepository
  * @param {string | undefined} actionRef
- * @param {string} [githubToken]
- * @returns {Promise<string | null>}
- */
-const releaseTagForActionRef = async (
-  actionRepository,
-  actionRef,
-  githubToken,
-) => {
-  if (!actionRef) {
-    return null;
-  }
-
-  return releaseTag(actionRepository, actionRef, githubToken);
-};
-
-/**
  * @param {string} assetName
  * @returns {Promise<AssetRequest>}
  */
-const directReleaseAssetRequest = async (assetName) => {
-  const actionRepository =
-    process.env.GITHUB_ACTION_REPOSITORY?.trim() || "sub60/cache-action";
-
-  // TODO: remove the fallback once the repo is public and local checkouts are
-  // no longer needed.
-  const actionRef = process.env.GITHUB_ACTION_REF?.trim();
-
+const directReleaseAssetRequest = async (
+  actionRepository,
+  actionRef,
+  assetName,
+) => {
   const base = `https://github.com/${actionRepository}/releases`;
-  const tag = await releaseTagForActionRef(actionRepository, actionRef);
-  const url = tag
-    ? `${base}/download/${tag}/${assetName}`
-    : `${base}/latest/download/${assetName}`;
+  const tag = actionRef ? await releaseTag(actionRepository, actionRef) : null;
 
   return {
-    url,
+    url: tag
+      ? `${base}/download/${tag}/${assetName}`
+      : `${base}/latest/download/${assetName}`,
     headers: {},
     source: tag ? "direct release URL" : "direct latest release URL",
   };
 };
 
 /**
+ * @param {string} actionRepository
+ * @param {string | undefined} actionRef
  * @param {string} assetName
- * @param {string} githubToken
+ * @param {string} [githubToken]
  * @returns {Promise<AssetRequest>}
  */
-const githubApiReleaseAssetRequest = async (assetName, githubToken) => {
-  const actionRepository =
-    process.env.GITHUB_ACTION_REPOSITORY?.trim() || "sub60/cache-action";
-
-  // TODO: remove the fallback once the repo is public and local checkouts are
-  // no longer needed.
-  const actionRef = process.env.GITHUB_ACTION_REF?.trim();
-
+const githubApiReleaseAssetRequest = async (
+  actionRepository,
+  actionRef,
+  assetName,
+  githubToken,
+) => {
   const apiUrl = requiredEnv("GITHUB_API_URL");
-
-  const tag = await releaseTagForActionRef(
-    actionRepository,
-    actionRef,
-    githubToken,
-  );
+  const tag = actionRef
+    ? await releaseTag(actionRepository, actionRef, githubToken)
+    : null;
   const releaseUrl = tag
     ? `${apiUrl}/repos/${actionRepository}/releases/tags/${encodeURIComponent(tag)}`
     : `${apiUrl}/repos/${actionRepository}/releases/latest`;
@@ -329,13 +306,17 @@ const githubApiReleaseAssetRequest = async (assetName, githubToken) => {
 
   return {
     url: asset.url,
-    headers: {
-      accept: "application/octet-stream",
-      authorization: `Bearer ${githubToken}`,
-      "x-github-api-version": "2022-11-28",
-    },
+    headers: githubAssetDownloadHeaders(githubToken),
     source: "GitHub API",
   };
+};
+
+/**
+ * @param {string | undefined} actionRef
+ * @returns {boolean}
+ */
+const shouldUseGitHubApiAsset = (actionRef) => {
+  return IS_PRIVATE || Boolean(actionRef && isCommitSha(actionRef));
 };
 
 /**
@@ -359,7 +340,9 @@ const downloadGzipFile = async (url, destinationPath, headers = {}) => {
   const fetchMs = elapsedMs(fetchStartedAt);
 
   if (!response.ok) {
-    throw new DownloadError(url, response);
+    throw new Error(
+      `Failed to download '${url}': ${response.status} ${response.statusText}`,
+    );
   }
 
   if (!response.body) {
@@ -538,11 +521,26 @@ const main = async () => {
   const configPath = path.join(daemonDir, "nix.conf");
   const daemonLogPath = path.join(daemonDir, "daemon.log");
   const assetName = `${binaryName}-${target}.gz`;
+  const actionRepository =
+    process.env.GITHUB_ACTION_REPOSITORY?.trim() || "sub60/cache-action";
+  const actionRef = process.env.GITHUB_ACTION_REF?.trim();
 
   const releaseStartedAt = now();
-  const assetRequest = githubToken
-    ? await githubApiReleaseAssetRequest(assetName, githubToken)
-    : await directReleaseAssetRequest(assetName);
+  const useGitHubApiAsset = shouldUseGitHubApiAsset(actionRef);
+  if (IS_PRIVATE && !githubToken) {
+    throw new Error(
+      "github-token is required to download release assets from the private cache-action repository",
+    );
+  }
+
+  const assetRequest = useGitHubApiAsset
+    ? await githubApiReleaseAssetRequest(
+        actionRepository,
+        actionRef,
+        assetName,
+        githubToken,
+      )
+    : await directReleaseAssetRequest(actionRepository, actionRef, assetName);
   timings.add(
     "resolve release asset",
     elapsedMs(releaseStartedAt),
