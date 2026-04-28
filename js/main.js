@@ -143,16 +143,13 @@ const releaseTag = async (actionRef, githubToken) => {
 };
 
 /**
- * @param {string} actionRef
+ * @param {string} tag
  * @param {string} assetName
- * @returns {Promise<{ url: string, headers: Record<string, string> }>}
+ * @returns {{ url: string, headers: Record<string, string> }}
  */
-const directReleaseAssetRequest = async (actionRef, assetName) => {
-  const base = `https://github.com/${ACTION_REPOSITORY}/releases`;
-  const tag = await releaseTag(actionRef);
-
+const directReleaseAssetRequest = (tag, assetName) => {
   return {
-    url: `${base}/download/${tag}/${assetName}`,
+    url: `https://github.com/${ACTION_REPOSITORY}/releases/download/${tag}/${assetName}`,
     headers: {},
   };
 };
@@ -332,9 +329,9 @@ const waitForDaemonReady = async (child) => {
   );
 
   /** @type {(error: Error) => void} */
-  let onError = () => { };
+  let onError = () => {};
   /** @type {(code: number | null, signal: NodeJS.Signals | null) => void} */
-  let onExit = () => { };
+  let onExit = () => {};
 
   const exitedEarly = new Promise((_, reject) => {
     onError = reject;
@@ -384,17 +381,13 @@ const main = async () => {
     );
   }
 
-  const assetRequest = (IS_PRIVATE || isCommitSha(actionRef))
-    ? await githubApiReleaseAssetRequest(actionRef, assetName, githubToken)
-    : await directReleaseAssetRequest(actionRef, assetName);
+  const assetRequest =
+    IS_PRIVATE || isCommitSha(actionRef)
+      ? await githubApiReleaseAssetRequest(actionRef, assetName, githubToken)
+      : directReleaseAssetRequest(actionRef, assetName);
 
   core.info(`Downloading '${assetName}' from '${assetRequest.url}'`);
-
-  await downloadGzipFile(
-    assetRequest.url,
-    binaryPath,
-    assetRequest.headers,
-  );
+  await downloadGzipFile(assetRequest.url, binaryPath, assetRequest.headers);
 
   core.saveState(STATE_SOCKET_PATH, socketPath);
   core.saveState(STATE_BINARY_PATH, binaryPath);
