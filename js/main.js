@@ -362,20 +362,19 @@ const waitForDaemonReady = async (child) => {
  * @returns {Promise<void>}
  */
 const main = async () => {
-  const authToken = core.getInput("auth-token", { required: true });
-  const githubToken = core.getInput("github-token");
   const user = core.getInput("user", { required: true });
   const cache = core.getInput("cache", { required: true });
-  const target = platformAssetTarget();
+  const authToken = core.getInput("auth-token", { required: true });
+  const githubToken = core.getInput("github-token");
   const runnerTemp = process.env.RUNNER_TEMP || os.tmpdir();
-  const daemonDir = await fsp.mkdtemp(
-    path.join(runnerTemp, "sub60-cache-action-"),
-  );
+  const tempDirPrefix = `${ACTION_REPOSITORY.replaceAll("/", "-")}-`;
+  const daemonDir = await fsp.mkdtemp(path.join(runnerTemp, tempDirPrefix));
   const socketPath = path.join(daemonDir, "daemon.sock");
   const binaryPath = path.join(daemonDir, BINARY_NAME);
   const hookPath = path.join(daemonDir, "post-build-hook.sh");
   const configPath = path.join(daemonDir, "nix.conf");
   const daemonLogPath = path.join(daemonDir, "daemon.log");
+  const target = platformAssetTarget();
   const assetName = `${BINARY_NAME}-${target}.gz`;
   const actionRef = requiredEnv("GITHUB_ACTION_REF");
 
@@ -390,6 +389,7 @@ const main = async () => {
     : await directReleaseAssetRequest(actionRef, assetName);
 
   core.info(`Downloading '${assetName}' from '${assetRequest.url}'`);
+
   await downloadGzipFile(
     assetRequest.url,
     binaryPath,
