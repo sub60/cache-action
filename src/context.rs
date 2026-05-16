@@ -35,7 +35,7 @@ pub trait Context {
     fn spawner(&self) -> &Self::Spawner;
 }
 
-pub trait Cache: Clone + Send + 'static {
+pub trait Cache: Clone + Send + Sync + 'static {
     type NarUploadState: Send;
     type Error: Error + Send;
 
@@ -63,7 +63,7 @@ pub trait Cache: Clone + Send + 'static {
     ) -> impl Future<Output = Result<u64, Self::Error>> + Send;
 }
 
-pub trait HttpClient: Clone + Send + 'static {
+pub trait HttpClient: Clone + Send + Sync + 'static {
     type Error: Error + Send;
 
     fn get(

@@ -140,14 +140,14 @@ pub(crate) async fn run<Ctx: Context>(
                             let mut upstream_caches = args.upstream_caches.clone();
                             let cache = cache.clone();
                             let http_client = ctx.http_client().clone();
-                            let nix = ctx.nix().clone();
+                            let mut nix = ctx.nix().clone();
                             let fut = async move {
                                 let result = handle_store_path(
                                     &path,
                                     &mut upstream_caches,
-                                    cache,
-                                    http_client,
-                                    nix,
+                                    &cache,
+                                    &http_client,
+                                    &mut nix,
                                 ).await;
                                 (result, path)
                             };
@@ -229,18 +229,20 @@ async fn handle_io<I: Io>(
 async fn handle_store_path<C: Cache, H: HttpClient, N: Nix>(
     store_path: &StorePath<StoreDir>,
     upstream_caches: &mut [url::Url],
-    cache: C,
-    http_client: H,
-    mut nix: N,
+    cache: &C,
+    http_client: &H,
+    nix: &mut N,
 ) -> Result<Option<NonZeroU64>, HandlePathError<C, N>> {
     let narinfo_filename = NarInfoFileName { store_hash: *store_path.hash() };
 
-    // If the cache already has the NARInfo then it must also have the NAR, so
-    // we can skip this path.
-    if cache
-        .has_narinfo(&narinfo_filename)
-        .await
-        .map_err(HandlePathError::CheckNarInfoExistence)?
+    if !should_push_store_path(
+        &narinfo_filename,
+        upstream_caches,
+        cache,
+        http_client,
+    )
+    .await
+    .map_err(HandlePathError::CheckNarInfoExistence)?
     {
         return Ok(None);
     }
@@ -313,6 +315,75 @@ async fn handle_store_path<C: Cache, H: HttpClient, N: Nix>(
         .map_err(HandlePathError::UploadNarInfo)?;
 
     Ok(Some(nar_size.saturating_add(narinfo_size)))
+}
+
+async fn should_push_store_path<C: Cache, H: HttpClient>(
+    narinfo_filename: &NarInfoFileName,
+    upstream_caches: &mut [url::Url],
+    cache: &C,
+    http_client: &H,
+) -> Result<bool, C::Error> {
+    let cache_has_narinfo = cache.has_narinfo(narinfo_filename);
+
+    let upstream_has_narinfo = upstream_caches_have_narinfo(
+        narinfo_filename,
+        upstream_caches,
+        http_client,
+    );
+
+    futures::pin_mut!(cache_has_narinfo, upstream_has_narinfo);
+
+    match future::select(cache_has_narinfo, upstream_has_narinfo).await {
+        future::Either::Left((Ok(true), _)) => Ok(false),
+        future::Either::Left((Ok(false), upstream_has_narinfo)) => {
+            Ok(!upstream_has_narinfo.await)
+        },
+        future::Either::Left((Err(err), upstream_has_narinfo)) => {
+            if upstream_has_narinfo.await {
+                Ok(false)
+            } else {
+                Err(err)
+            }
+        },
+        future::Either::Right((true, _)) => Ok(false),
+        future::Either::Right((false, cache_has_narinfo)) => {
+            Ok(!cache_has_narinfo.await?)
+        },
+    }
+}
+
+async fn upstream_caches_have_narinfo<H: HttpClient>(
+    narinfo_filename: &NarInfoFileName,
+    upstream_caches: &mut [url::Url],
+    http_client: &H,
+) -> bool {
+    let narinfo_path_segment = narinfo_filename.to_string();
+
+    for upstream_cache in upstream_caches.iter_mut() {
+        upstream_cache
+            .path_segments_mut()
+            .expect("upstream cache URL can be a base")
+            .push(&narinfo_path_segment);
+    }
+
+    let mut requests = FuturesUnordered::new();
+
+    for upstream_cache in upstream_caches.iter().cloned() {
+        requests.push(async {
+            matches!(
+                http_client.get(upstream_cache).await,
+                Ok(http::StatusCode::OK)
+            )
+        });
+    }
+
+    while let Some(has_narinfo) = requests.next().await {
+        if has_narinfo {
+            return true;
+        }
+    }
+
+    false
 }
 
 impl<Ctx: Context> Default for ActionReport<Ctx> {
