@@ -28,16 +28,8 @@ pub struct RunArgs {
     ready_fd: Option<RawFd>,
 
     #[cfg(feature = "sub60-cache")]
-    #[arg(long)]
-    user: nix_types::sub60::UserName,
-
-    #[cfg(feature = "sub60-cache")]
-    #[arg(long)]
-    cache: nix_types::sub60::CacheName,
-
-    #[cfg(feature = "sub60-cache")]
-    #[arg(long)]
-    auth_token: crate::sub60_cache::AuthToken,
+    #[command(flatten)]
+    pub(crate) sub60_cache_args: crate::sub60_cache::Sub60CacheRunArgs,
 }
 
 enum StartError {
@@ -98,13 +90,9 @@ async fn start(
     let cache = cfg_select! {
         feature = "noop-cache" => crate::noop_cache::NoopCache::default(),
         feature = "sub60-cache" => {
-            crate::sub60_cache::Sub60Cache::connect(
-                args.user,
-                args.cache,
-                args.auth_token,
-            )
-            .await
-            .map_err(StartError::ConnectToCache)?
+            crate::sub60_cache::Sub60Cache::connect(&args)
+                .await
+                .map_err(StartError::ConnectToCache)?
         },
         _ => unreachable!(),
     };

@@ -24,6 +24,7 @@ use smallvec::SmallVec;
 use crate::async_read_ext::AsyncReadExt;
 use crate::context;
 use crate::protocol::StoreDir;
+use crate::run::RunArgs;
 
 pub(crate) type AuthToken = String;
 
@@ -34,6 +35,18 @@ static SUB60_CACHE_URL: LazyLock<url::Url> =
 pub(crate) struct Sub60Cache {
     cache_url: url::Url,
     client: reqwest::Client,
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct Sub60CacheRunArgs {
+    #[arg(long)]
+    user: UserName,
+
+    #[arg(long)]
+    cache: CacheName,
+
+    #[arg(long)]
+    auth_token: AuthToken,
 }
 
 #[derive(Debug)]
@@ -88,16 +101,14 @@ struct Quoted<T>(T);
 impl Sub60Cache {
     /// TODO: docs.
     pub(crate) async fn connect(
-        owner: UserName,
-        name: CacheName,
-        _auth: AuthToken,
+        RunArgs { sub60_cache_args: args, .. }: &RunArgs,
     ) -> Result<Self, CacheConnectError> {
         let mut cache_url = SUB60_CACHE_URL.clone();
         cache_url
             .path_segments_mut()
             .expect("cache URL can be a base")
-            .push(&owner)
-            .push(&name);
+            .push(&args.user)
+            .push(&args.cache);
 
         let client = reqwest::Client::builder()
             .build()
