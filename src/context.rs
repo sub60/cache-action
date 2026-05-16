@@ -16,11 +16,14 @@ use crate::protocol::{self, StoreDir};
 
 pub trait Context {
     type Cache: Cache;
+    type HttpClient: HttpClient;
     type Nix: Nix;
     type Spawner: Spawner;
     type StopProgressReporter<W: AsyncWrite + Unpin>: StopProgressReporter;
 
     fn handle_rx_error(&mut self, rx_error: protocol::ReceiveError);
+
+    fn http_client(&self) -> &Self::HttpClient;
 
     fn new_stop_progress_reporter<W: AsyncWrite + Unpin>(
         &mut self,
@@ -58,6 +61,15 @@ pub trait Cache: Clone + Send + 'static {
         narinfo: NarInfo<(), StoreDir>,
         nar_upload_state: Self::NarUploadState,
     ) -> impl Future<Output = Result<u64, Self::Error>> + Send;
+}
+
+pub trait HttpClient: Clone + Send + 'static {
+    type Error: Error + Send;
+
+    fn get(
+        &self,
+        url: url::Url,
+    ) -> impl Future<Output = Result<http::StatusCode, Self::Error>> + Send;
 }
 
 pub trait StopProgressReporter {

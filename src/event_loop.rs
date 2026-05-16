@@ -21,6 +21,7 @@ use sha2::{Digest, Sha256};
 use crate::context::{
     Cache,
     Context,
+    HttpClient,
     JoinHandle,
     Nix,
     Spawner,
@@ -28,6 +29,7 @@ use crate::context::{
     StorePathInfos,
 };
 use crate::protocol::{self, StoreDir};
+use crate::run::RunArgs;
 
 const NAR_STREAM_BUFFER_SIZE: usize = 64 * 1024;
 
@@ -94,6 +96,7 @@ impl<W> HashAndCountWriter<W> {
 }
 
 pub(crate) async fn run<Ctx: Context>(
+    args: RunArgs,
     cache: Ctx::Cache,
     mut io_stream: impl FusedStream<Item = impl Io> + Unpin,
     ctx: &mut Ctx,
@@ -134,13 +137,19 @@ pub(crate) async fn run<Ctx: Context>(
                             if !seen_store_hashes.insert(*path.hash()) {
                                 continue;
                             }
+                            let mut upstream_caches = args.upstream_caches.clone();
                             let cache = cache.clone();
+                            let http_client = ctx.http_client().clone();
                             let nix = ctx.nix().clone();
                             let fut = async move {
-                                (
-                                    handle_store_path(&path, cache, nix).await,
-                                    path,
-                                )
+                                let result = handle_store_path(
+                                    &path,
+                                    &mut upstream_caches,
+                                    cache,
+                                    http_client,
+                                    nix,
+                                ).await;
+                                (result, path)
                             };
                             handle_store_paths.push(ctx.spawner().spawn(fut));
                         }
@@ -217,9 +226,11 @@ async fn handle_io<I: Io>(
 ///
 /// Returns the total number of bytes pushed to the cache, or `None` if the path
 /// was cached.
-async fn handle_store_path<C: Cache, N: Nix>(
+async fn handle_store_path<C: Cache, H: HttpClient, N: Nix>(
     store_path: &StorePath<StoreDir>,
+    upstream_caches: &mut [url::Url],
     cache: C,
+    http_client: H,
     mut nix: N,
 ) -> Result<Option<NonZeroU64>, HandlePathError<C, N>> {
     let narinfo_filename = NarInfoFileName { store_hash: *store_path.hash() };

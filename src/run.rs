@@ -12,6 +12,7 @@ use std::{io, process};
 use async_compat::Compat;
 use futures::Stream;
 use futures::stream::FusedStream;
+use smallvec::SmallVec;
 use tokio::net::{UnixListener, UnixStream};
 
 use crate::event_loop;
@@ -29,11 +30,12 @@ pub struct RunArgs {
 
     #[arg(
         long,
+        value_parser = url::Url::parse,
         value_delimiter = ',',
         num_args = 0..,
-        default_values_t = vec!["https://cache.nixos.org".parse::<url::Url>().expect("valid URL")],
+        default_values = ["https://cache.nixos.org"],
     )]
-    upstream_caches: Vec<url::Url>,
+    pub(crate) upstream_caches: SmallVec<[url::Url; 2]>,
 
     #[cfg(feature = "sub60-cache")]
     #[command(flatten)]
@@ -108,7 +110,7 @@ async fn start(
     let mut ctx = RealContext::new(nix_store, spawner);
 
     Ok(async move {
-        event_loop::run(cache, UnixStreams { listener }, &mut ctx).await;
+        event_loop::run(args, cache, UnixStreams { listener }, &mut ctx).await;
     })
 }
 
