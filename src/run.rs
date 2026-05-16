@@ -27,6 +27,14 @@ pub struct RunArgs {
     #[arg(long)]
     ready_fd: Option<RawFd>,
 
+    #[arg(
+        long,
+        value_delimiter = ',',
+        num_args = 0..,
+        default_values_t = vec!["https://cache.nixos.org".parse::<url::Url>().expect("valid URL")],
+    )]
+    upstream_caches: Vec<url::Url>,
+
     #[cfg(feature = "sub60-cache")]
     #[command(flatten)]
     pub(crate) sub60_cache_args: crate::sub60_cache::Sub60CacheRunArgs,
