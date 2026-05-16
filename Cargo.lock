@@ -172,6 +172,7 @@ dependencies = [
  "either",
  "flume",
  "futures",
+ "http",
  "memchr",
  "nix-compat",
  "nix-types",

@@ -12,6 +12,7 @@ use std::{io, process};
 use async_compat::Compat;
 use futures::Stream;
 use futures::stream::FusedStream;
+use smallvec::SmallVec;
 use tokio::net::{UnixListener, UnixStream};
 
 use crate::event_loop;
@@ -26,6 +27,15 @@ pub struct RunArgs {
 
     #[arg(long)]
     ready_fd: Option<RawFd>,
+
+    #[arg(
+        long,
+        value_parser = url::Url::parse,
+        value_delimiter = ',',
+        num_args = 0..,
+        default_values = ["https://cache.nixos.org"],
+    )]
+    pub(crate) upstream_caches: SmallVec<[url::Url; 2]>,
 
     #[cfg(feature = "sub60-cache")]
     #[command(flatten)]
@@ -100,7 +110,7 @@ async fn start(
     let mut ctx = RealContext::new(nix_store, spawner);
 
     Ok(async move {
-        event_loop::run(cache, UnixStreams { listener }, &mut ctx).await;
+        event_loop::run(args, cache, UnixStreams { listener }, &mut ctx).await;
     })
 }
 

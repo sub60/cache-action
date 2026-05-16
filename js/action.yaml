@@ -11,6 +11,8 @@ inputs:
     required: true
   cache:
     required: true
+  upstream-caches:
+    required: false
 
 runs:
   using: "node24"

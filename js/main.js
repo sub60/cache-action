@@ -356,12 +356,27 @@ const waitForDaemonReady = async (child) => {
 };
 
 /**
+ * @param {string} input
+ * @returns {string[] | null}
+ */
+const parseUpstreamCaches = (input) => {
+  if (!input) {
+    return null;
+  }
+  const values = input.split(/\s+/).filter(Boolean);
+  return values.length === 1 && values[0].toLowerCase() === "none"
+    ? []
+    : values;
+};
+
+/**
  * @returns {Promise<void>}
  */
 const main = async () => {
   const user = core.getInput("user", { required: true });
   const cache = core.getInput("cache", { required: true });
   const authToken = core.getInput("auth-token", { required: true });
+  const upstreamCaches = parseUpstreamCaches(core.getInput("upstream-caches"));
   const githubToken = core.getInput("github-token");
   const runnerTemp = process.env.RUNNER_TEMP || os.tmpdir();
   const tempDirPrefix = `${ACTION_REPOSITORY.replaceAll("/", "-")}-`;
@@ -398,29 +413,31 @@ const main = async () => {
   await writeNixConfig(configPath, hookPath);
   core.exportVariable("NIX_USER_CONF_FILES", mergedUserConfFiles(configPath));
 
+  const daemonArgs = [
+    "run",
+    "--socket",
+    socketPath,
+    "--ready-fd",
+    "3",
+    "--auth-token",
+    authToken,
+    "--user",
+    user,
+    "--cache",
+    cache,
+  ];
+
+  if (upstreamCaches !== null) {
+    daemonArgs.push("--upstream-caches", ...upstreamCaches);
+  }
+
   const daemonLogFd = fs.openSync(daemonLogPath, "a");
   let child;
   try {
-    child = spawn(
-      binaryPath,
-      [
-        "run",
-        "--socket",
-        socketPath,
-        "--ready-fd",
-        "3",
-        "--auth-token",
-        authToken,
-        "--user",
-        user,
-        "--cache",
-        cache,
-      ],
-      {
-        detached: true,
-        stdio: ["ignore", daemonLogFd, daemonLogFd, "pipe"],
-      },
-    );
+    child = spawn(binaryPath, daemonArgs, {
+      detached: true,
+      stdio: ["ignore", daemonLogFd, daemonLogFd, "pipe"],
+    });
   } finally {
     fs.closeSync(daemonLogFd);
   }

@@ -14,6 +14,9 @@ inputs:
   auth-token:
     description: "The authentication token used to push store paths"
     required: true
+  upstream-caches:
+    description: "Space/newline-separated binary cache URLs whose store paths should not be pushed. Use 'none' to clear the default"
+    required: false
   github-token:
     description: "GitHub token used to download release artifacts from private repos"
     required: false
@@ -31,6 +34,7 @@ runs:
         action-ref: ${{ inputs.action-ref }}
         user: ${{ inputs.user }}
         cache: ${{ inputs.cache }}
+        upstream-caches: ${{ inputs.upstream-caches }}
       env:
         GITHUB_ACTION_REF: ${{ github.action_ref }}
         GITHUB_ACTION_REPOSITORY: ${{ github.action_repository }}
