@@ -20,7 +20,7 @@ nix-compat = { git = "https://git.snix.dev/snix/snix", default-features = false,
   "async",
   "wire",
 ] }
-nix-types = { git = "ssh://git@github.com/sub60/nix-types.git" }
+nix-types = { git = "ssh://git@github.com/sub60/cache.git" }
 nixb = { git = "https://github.com/noib3/nixb", branch = "store-path-info", features = [
   "nix-2-35",
   "store",
@@ -30,6 +30,7 @@ reqwest = "0.13"
 sha2 = "0.11"
 smallvec = "1"
 smol_str = "0.3.6"
+sub60-cache = { git = "ssh://git@github.com/sub60/cache.git" }
 tokio = { version = "1", default-features = false, features = [
   "fs",
   "io-std",

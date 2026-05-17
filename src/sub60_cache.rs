@@ -8,7 +8,10 @@ use std::sync::LazyLock;
 
 use bytes::{Bytes, BytesMut};
 use futures::AsyncRead;
-use nix_types::sub60::nar_multiparts::{
+use nix_types::{NarInfo, NarInfoFileName, StoreBasename, StorePath};
+use reqwest::{Method, StatusCode, header};
+use smallvec::SmallVec;
+use sub60_cache::nar_multiparts::{
     CompleteRequestBody,
     Etag,
     NarMultipartsResponseBody,
@@ -16,17 +19,14 @@ use nix_types::sub60::nar_multiparts::{
     PartsResponseBody,
     UploadId,
 };
-use nix_types::sub60::{CacheName, UserName};
-use nix_types::{NarInfo, NarInfoFileName, StoreBasename, StorePath};
-use reqwest::{Method, StatusCode, header};
-use smallvec::SmallVec;
+use sub60_cache::{CacheName, UserName};
 
 use crate::async_read_ext::AsyncReadExt;
 use crate::context;
 use crate::protocol::StoreDir;
 use crate::run::RunArgs;
 
-pub(crate) type AuthToken = String;
+type AuthToken = String;
 
 static SUB60_CACHE_URL: LazyLock<url::Url> =
     LazyLock::new(|| "https://cache.sub60.dev".parse().expect("valid URL"));

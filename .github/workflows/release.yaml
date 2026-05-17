@@ -31,7 +31,7 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.1
         with:
           ssh-private-key: |
-            ${{ secrets.NIX_TYPES_DEPLOY_KEY }}
+            ${{ secrets.SUB60_CACHE_SSH_KEY }}
 
       - name: Build package
         run: nix build ".#${{ matrix.package }}"
