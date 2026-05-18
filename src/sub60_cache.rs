@@ -1,10 +1,12 @@
 use core::num::{NonZeroU16, NonZeroU32};
 use core::pin::pin;
 use core::str::FromStr;
+use core::time::Duration;
 use core::{fmt, iter};
 use std::collections::VecDeque;
 use std::io;
 use std::sync::LazyLock;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use bytes::{Bytes, BytesMut};
 use futures::AsyncRead;
@@ -88,6 +90,7 @@ pub(crate) struct NarUploadState {
     part_urls: VecDeque<url::Url>,
     store_basename: StoreBasename,
     upload_id: UploadId,
+    urls_expiration_ts: Duration,
 }
 
 #[derive(Debug)]
@@ -194,7 +197,7 @@ impl Sub60Cache {
         upload_id: &UploadId,
         part_numbers: SmallVec<[NonZeroU16; 8]>,
         store_basename: StoreBasename,
-    ) -> Result<SmallVec<[url::Url; 8]>, CacheRequestError> {
+    ) -> Result<PartsResponseBody, CacheRequestError> {
         let url = self.nar_multiparts_parts_url(upload_id);
 
         let response = self
@@ -214,13 +217,12 @@ impl Sub60Cache {
             .await);
         }
 
-        Ok(response
+        response
             .text()
             .await
             .map_err(CacheRequestError::Request)?
             .parse::<PartsResponseBody>()
-            .map_err(CacheRequestError::ParsePartsResponseBody)?
-            .urls)
+            .map_err(CacheRequestError::ParsePartsResponseBody)
     }
 
     async fn upload_part(
@@ -347,6 +349,7 @@ impl context::Cache for Sub60Cache {
             part_urls: body.parts_urls.into_iter().collect(),
             store_basename: store_path.basename().clone(),
             upload_id: body.upload_id,
+            urls_expiration_ts: body.expiration_ts,
         })
     }
 
@@ -363,6 +366,17 @@ impl context::Cache for Sub60Cache {
         let mut part_bytes_buf = BytesMut::zeroed(part_size);
 
         loop {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("we're past the UNIX epoch");
+
+            // Discard the current upload URLs if they're past their expiration
+            // timestamp, with some safety buffer to account for clock skew and
+            // network delay.
+            if now + Duration::from_secs(10) >= state.urls_expiration_ts {
+                state.part_urls.clear();
+            }
+
             let Some(part_url) = state.part_urls.pop_front() else {
                 let new_part_numbers =
                     iter::successors(Some(part_number), |part_number| {
@@ -370,14 +384,15 @@ impl context::Cache for Sub60Cache {
                     })
                     .take(4)
                     .collect::<SmallVec<_>>();
-                let new_urls = self
+                let parts = self
                     .request_part_urls(
                         &state.upload_id,
                         new_part_numbers,
                         state.store_basename.clone(),
                     )
                     .await?;
-                state.part_urls.extend(new_urls);
+                state.part_urls.extend(parts.urls);
+                state.urls_expiration_ts = parts.expiration_ts;
                 continue;
             };
 
