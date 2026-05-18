@@ -7,7 +7,6 @@ use futures::AsyncRead;
 pub(crate) trait AsyncReadExt: AsyncRead {
     /// Creates a future which will try to fill the given buffer, returning the
     /// number of bytes that have been read into it.
-    #[cfg_attr(not(feature = "sub60-cache"), expect(unused))]
     fn try_fill<'a>(
         self: Pin<&'a mut Self>,
         buf: &'a mut [u8],

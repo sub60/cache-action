@@ -1,11 +1,13 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
+#[cfg(not(feature = "sub60-cache"))]
+mod any_cache;
 mod async_read_ext;
 mod context;
 mod event_loop;
 mod nix_store;
-#[cfg(feature = "noop-cache")]
+#[cfg(not(feature = "sub60-cache"))]
 mod noop_cache;
 mod protocol;
 mod push;
@@ -13,11 +15,11 @@ mod real_context;
 mod real_stop_progress_reporter;
 mod run;
 mod stop;
-#[cfg(feature = "sub60-cache")]
 mod sub60_cache;
 mod tokio;
 
 #[derive(Debug, clap::Subcommand)]
+#[expect(clippy::large_enum_variant)]
 pub enum Command {
     Run(run::RunArgs),
     Push(push::PushArgs),

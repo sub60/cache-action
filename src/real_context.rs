@@ -18,8 +18,8 @@ impl RealContext {
 }
 
 impl context::Context for RealContext {
-    #[cfg(feature = "noop-cache")]
-    type Cache = crate::noop_cache::NoopCache;
+    #[cfg(not(feature = "sub60-cache"))]
+    type Cache = crate::any_cache::AnyCache;
     #[cfg(feature = "sub60-cache")]
     type Cache = crate::sub60_cache::Sub60Cache;
     type HttpClient = reqwest::Client;

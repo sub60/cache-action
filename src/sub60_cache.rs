@@ -52,7 +52,7 @@ pub(crate) struct Sub60CacheRunArgs {
 }
 
 #[derive(Debug)]
-pub(crate) enum CacheConnectError {
+pub(crate) enum Sub60CacheConnectError {
     BuildHttpClient(reqwest::Error),
 }
 
@@ -105,7 +105,7 @@ impl Sub60Cache {
     /// TODO: docs.
     pub(crate) async fn connect(
         RunArgs { sub60_cache_args: args, .. }: &RunArgs,
-    ) -> Result<Self, CacheConnectError> {
+    ) -> Result<Self, Sub60CacheConnectError> {
         let mut cache_url = SUB60_CACHE_URL.clone();
         cache_url
             .path_segments_mut()
@@ -115,7 +115,7 @@ impl Sub60Cache {
 
         let client = reqwest::Client::builder()
             .build()
-            .map_err(CacheConnectError::BuildHttpClient)?;
+            .map_err(Sub60CacheConnectError::BuildHttpClient)?;
 
         Ok(Self { cache_url, client })
     }
@@ -482,7 +482,7 @@ impl<T: FromStr> FromStr for Quoted<T> {
     }
 }
 
-impl fmt::Display for CacheConnectError {
+impl fmt::Display for Sub60CacheConnectError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::BuildHttpClient(err) => {
@@ -527,7 +527,7 @@ impl fmt::Display for CacheRequestError {
     }
 }
 
-impl core::error::Error for CacheConnectError {}
+impl core::error::Error for Sub60CacheConnectError {}
 
 impl core::error::Error for CacheRequestError {
     fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {

@@ -4,7 +4,6 @@ version = "0.0.14"
 edition = "2024"
 
 [features]
-noop-cache = []
 sub60-cache = []
 
 [dependencies]

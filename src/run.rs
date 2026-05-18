@@ -15,9 +15,14 @@ use futures::stream::FusedStream;
 use smallvec::SmallVec;
 use tokio::net::{UnixListener, UnixStream};
 
+#[cfg(not(feature = "sub60-cache"))]
+use crate::any_cache::AnyCacheKind;
 use crate::event_loop;
 use crate::nix_store::NixStore;
 use crate::real_context::RealContext;
+#[cfg(feature = "sub60-cache")]
+use crate::sub60_cache::Sub60Cache;
+use crate::sub60_cache::{Sub60CacheConnectError, Sub60CacheRunArgs};
 use crate::tokio::{Tokio, TokioSpawner};
 
 #[derive(Debug, clap::Args)]
@@ -37,15 +42,17 @@ pub struct RunArgs {
     )]
     pub(crate) upstream_caches: SmallVec<[url::Url; 2]>,
 
-    #[cfg(feature = "sub60-cache")]
     #[command(flatten)]
-    pub(crate) sub60_cache_args: crate::sub60_cache::Sub60CacheRunArgs,
+    pub(crate) sub60_cache_args: Sub60CacheRunArgs,
+
+    #[cfg(not(feature = "sub60-cache"))]
+    #[arg(long, value_enum)]
+    pub(crate) cache: AnyCacheKind,
 }
 
 enum StartError {
     BindSocket(io::Error),
-    #[cfg(feature = "sub60-cache")]
-    ConnectToCache(crate::sub60_cache::CacheConnectError),
+    ConnectToCache(Sub60CacheConnectError),
     OpenNixStore(nixb::Error),
 }
 
@@ -97,15 +104,14 @@ async fn start(
 
     let nix_store = NixStore::open().map_err(StartError::OpenNixStore)?;
 
-    let cache = cfg_select! {
-        feature = "noop-cache" => crate::noop_cache::NoopCache::default(),
-        feature = "sub60-cache" => {
-            crate::sub60_cache::Sub60Cache::connect(&args)
-                .await
-                .map_err(StartError::ConnectToCache)?
-        },
-        _ => unreachable!(),
-    };
+    #[cfg(not(feature = "sub60-cache"))]
+    let cache = crate::any_cache::AnyCache::new(&args)
+        .await
+        .map_err(StartError::ConnectToCache)?;
+
+    #[cfg(feature = "sub60-cache")]
+    let cache =
+        Sub60Cache::connect(&args).await.map_err(StartError::ConnectToCache)?;
 
     let mut ctx = RealContext::new(nix_store, spawner);
 
@@ -158,7 +164,6 @@ impl fmt::Display for StartError {
             Self::BindSocket(io_error) => {
                 write!(f, "Couldn't bind to Unix domain socket: {io_error}")
             },
-            #[cfg(feature = "sub60-cache")]
             Self::ConnectToCache(error) => error.fmt(f),
             Self::OpenNixStore(error) => {
                 write!(f, "Couldn't open Nix store: {error}")
