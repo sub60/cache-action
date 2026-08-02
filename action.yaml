@@ -15,8 +15,9 @@ inputs:
     description: "The authentication token used to push store paths"
     required: true
   upstream-caches:
-    description: "Space/newline-separated binary cache URLs whose store paths should not be pushed. Use 'none' to clear the default"
+    description: "Space/newline-separated binary cache URLs whose store paths should not be pushed. Use 'none' to disable"
     required: false
+    default: "https://cache.nixos.org"
   github-token:
     description: "GitHub token used to download release artifacts from private repos"
     required: false

@@ -361,12 +361,9 @@ const waitForDaemonReady = async (child) => {
 
 /**
  * @param {string} input
- * @returns {string[] | null}
+ * @returns {string[]}
  */
 const parseUpstreamCaches = (input) => {
-  if (!input) {
-    return null;
-  }
   const values = input.split(/\s+/).filter(Boolean);
   return values.length === 1 && values[0].toLowerCase() === "none"
     ? []
@@ -433,8 +430,8 @@ const main = async () => {
     cache,
   ];
 
-  if (upstreamCaches !== null) {
-    daemonArgs.push("--upstream-caches", ...upstreamCaches);
+  if (upstreamCaches.length > 0) {
+    daemonArgs.push("--upstream-caches", upstreamCaches.join(","));
   }
 
   const daemonLogFd = fs.openSync(daemonLogPath, "a");

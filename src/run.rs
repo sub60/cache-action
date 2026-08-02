@@ -35,10 +35,9 @@ pub struct RunArgs {
 
     #[arg(
         long,
-        value_parser = url::Url::parse,
-        value_delimiter = ',',
-        num_args = 0..,
-        default_values = ["https://cache.nixos.org"],
+        required = false,
+        default_value = "",
+        value_parser = parse_upstream_caches,
     )]
     pub(crate) upstream_caches: SmallVec<[url::Url; 2]>,
 
@@ -118,6 +117,12 @@ async fn start(
     Ok(async move {
         event_loop::run(args, cache, UnixStreams { listener }, &mut ctx).await;
     })
+}
+
+fn parse_upstream_caches(
+    value: &str,
+) -> Result<SmallVec<[url::Url; 2]>, url::ParseError> {
+    value.split(',').filter(|value| !value.is_empty()).map(str::parse).collect()
 }
 
 impl Stream for UnixStreams {
