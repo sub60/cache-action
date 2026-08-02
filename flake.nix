@@ -181,7 +181,6 @@
             nativeBuildInputs = [ pkgs.buildPackages.pkg-config ];
             preBuild = mkStaticLinkEnvHook pkgs;
             env = {
-              CARGO_NET_GIT_FETCH_WITH_CLI = "true";
               PKG_CONFIG_ALL_STATIC = "1";
             };
           };

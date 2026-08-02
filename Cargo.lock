@@ -1283,7 +1283,7 @@ dependencies = [
 [[package]]
 name = "nix-types"
 version = "0.1.0"
-source = "git+ssh://git@github.com/sub60/cache.git#1faccd6d6c083b9e6fc527bb21ed59f80d2cd547"
+source = "git+https://github.com/sub60/cache.git#1faccd6d6c083b9e6fc527bb21ed59f80d2cd547"
 dependencies = [
  "base64",
  "cauchy",
@@ -2044,7 +2044,7 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 [[package]]
 name = "sub60-cache"
 version = "0.1.0"
-source = "git+ssh://git@github.com/sub60/cache.git#1faccd6d6c083b9e6fc527bb21ed59f80d2cd547"
+source = "git+https://github.com/sub60/cache.git#1faccd6d6c083b9e6fc527bb21ed59f80d2cd547"
 dependencies = [
  "axum",
  "cauchy",

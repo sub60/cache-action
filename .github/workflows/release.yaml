@@ -28,11 +28,6 @@ jobs:
         with:
           nix_version: 2.29.2
 
-      - uses: webfactory/ssh-agent@v0.9.1
-        with:
-          ssh-private-key: |
-            ${{ secrets.SUB60_CACHE_SSH_KEY }}
-
       - name: Build package
         run: nix build ".#${{ matrix.package }}"
 
