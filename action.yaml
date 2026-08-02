@@ -21,7 +21,7 @@ inputs:
     description: "GitHub token used to download release artifacts from private repos"
     required: false
   action-ref:
-    description: "The cache-action release tag to download when using a vendored checkout"
+    description: "The setup-cache release tag to download when using a vendored checkout"
     required: false
 
 runs:

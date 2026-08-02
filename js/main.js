@@ -15,7 +15,7 @@ const {
   STATE_SOCKET_PATH,
 } = require("./state");
 
-const ACTION_REPOSITORY = "sub60/cache-action";
+const ACTION_REPOSITORY = "sub60/setup-cache";
 const BINARY_NAME = "cache-action";
 
 /**
