@@ -20,21 +20,14 @@ inputs:
   github-token:
     description: "GitHub token used to download release artifacts from private repos"
     required: false
+  release-repository:
+    description: "Repository containing setup-cache release artifacts"
+    required: false
   action-ref:
     description: "The setup-cache release tag to download when using a vendored checkout"
     required: false
 
 runs:
-  using: "composite"
-  steps:
-    - uses: ./js
-      with:
-        auth-token: ${{ inputs.auth-token }}
-        github-token: ${{ inputs.github-token }}
-        action-ref: ${{ inputs.action-ref }}
-        user: ${{ inputs.user }}
-        cache: ${{ inputs.cache }}
-        upstream-caches: ${{ inputs.upstream-caches }}
-      env:
-        GITHUB_ACTION_REF: ${{ github.action_ref }}
-        GITHUB_ACTION_REPOSITORY: ${{ github.action_repository }}
+  using: "node24"
+  main: "js/main.js"
+  post: "js/post.js"

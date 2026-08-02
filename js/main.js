@@ -15,7 +15,7 @@ const {
   STATE_SOCKET_PATH,
 } = require("./state");
 
-const ACTION_REPOSITORY = "sub60/setup-cache";
+const DEFAULT_RELEASE_REPOSITORY = "sub60/setup-cache";
 const BINARY_NAME = "cache-action";
 
 /**
@@ -84,16 +84,17 @@ const githubApiHeaders = (githubToken) => {
 };
 
 /**
+ * @param {string} releaseRepository
  * @param {string} commitSha
  * @param {string} [githubToken]
  * @returns {Promise<string | null>}
  */
-const tagForCommit = async (commitSha, githubToken) => {
+const tagForCommit = async (releaseRepository, commitSha, githubToken) => {
   const apiUrl = requiredEnv("GITHUB_API_URL");
 
   for (let page = 1; ; page += 1) {
     const response = await fetch(
-      `${apiUrl}/repos/${ACTION_REPOSITORY}/tags?per_page=100&page=${page}`,
+      `${apiUrl}/repos/${releaseRepository}/tags?per_page=100&page=${page}`,
       {
         headers: githubApiHeaders(githubToken),
         redirect: "follow",
@@ -102,7 +103,7 @@ const tagForCommit = async (commitSha, githubToken) => {
 
     if (!response.ok) {
       throw new Error(
-        `Failed to list tags in '${ACTION_REPOSITORY}' while resolving commit '${commitSha}': ${response.status} ${response.statusText}`,
+        `Failed to list tags in '${releaseRepository}' while resolving commit '${commitSha}': ${response.status} ${response.statusText}`,
       );
     }
 
@@ -121,20 +122,21 @@ const tagForCommit = async (commitSha, githubToken) => {
 };
 
 /**
+ * @param {string} releaseRepository
  * @param {string} actionRef
  * @param {string} [githubToken]
  * @returns {Promise<string>}
  */
-const releaseTag = async (actionRef, githubToken) => {
+const releaseTag = async (releaseRepository, actionRef, githubToken) => {
   if (!isCommitSha(actionRef)) {
     return actionRef;
   }
 
-  const tag = await tagForCommit(actionRef, githubToken);
+  const tag = await tagForCommit(releaseRepository, actionRef, githubToken);
 
   if (!tag) {
     throw new Error(
-      `Action ref '${actionRef}' is a commit without a tag. This action downloads binaries from GitHub releases, which are only published for tags. Pin the action to a tag to use prebuilt artifacts`,
+      `Action ref '${actionRef}' is a commit without a tag in '${releaseRepository}'. This action downloads binaries from GitHub releases, which are only published for tags. Pin the action to a tag to use prebuilt artifacts`,
     );
   }
 
@@ -142,31 +144,34 @@ const releaseTag = async (actionRef, githubToken) => {
 };
 
 /**
+ * @param {string} releaseRepository
  * @param {string} tag
  * @param {string} assetName
  * @returns {{ url: string, headers: Record<string, string> }}
  */
-const directReleaseAssetRequest = (tag, assetName) => {
+const directReleaseAssetRequest = (releaseRepository, tag, assetName) => {
   return {
-    url: `https://github.com/${ACTION_REPOSITORY}/releases/download/${tag}/${assetName}`,
+    url: `https://github.com/${releaseRepository}/releases/download/${tag}/${assetName}`,
     headers: {},
   };
 };
 
 /**
+ * @param {string} releaseRepository
  * @param {string} actionRef
  * @param {string} assetName
  * @param {string} [githubToken]
  * @returns {Promise<{ url: string, headers: Record<string, string> }>}
  */
 const githubApiReleaseAssetRequest = async (
+  releaseRepository,
   actionRef,
   assetName,
   githubToken,
 ) => {
   const apiUrl = requiredEnv("GITHUB_API_URL");
-  const tag = await releaseTag(actionRef, githubToken);
-  const releaseUrl = `${apiUrl}/repos/${ACTION_REPOSITORY}/releases/tags/${encodeURIComponent(tag)}`;
+  const tag = await releaseTag(releaseRepository, actionRef, githubToken);
+  const releaseUrl = `${apiUrl}/repos/${releaseRepository}/releases/tags/${encodeURIComponent(tag)}`;
 
   const response = await fetch(releaseUrl, {
     headers: githubApiHeaders(githubToken),
@@ -175,7 +180,7 @@ const githubApiReleaseAssetRequest = async (
 
   if (!response.ok) {
     throw new Error(
-      `Failed to resolve release in '${ACTION_REPOSITORY}': ${response.status} ${response.statusText}`,
+      `Failed to resolve release in '${releaseRepository}': ${response.status} ${response.statusText}`,
     );
   }
 
@@ -184,7 +189,7 @@ const githubApiReleaseAssetRequest = async (
 
   if (!asset) {
     throw new Error(
-      `Release '${release.tag_name}' in '${ACTION_REPOSITORY}' does not contain asset '${assetName}'`,
+      `Release '${release.tag_name}' in '${releaseRepository}' does not contain asset '${assetName}'`,
     );
   }
 
@@ -377,8 +382,12 @@ const main = async () => {
   const authToken = core.getInput("auth-token", { required: true });
   const upstreamCaches = parseUpstreamCaches(core.getInput("upstream-caches"));
   const githubToken = core.getInput("github-token");
+  const releaseRepository =
+    core.getInput("release-repository") ||
+    process.env.GITHUB_ACTION_REPOSITORY?.trim() ||
+    DEFAULT_RELEASE_REPOSITORY;
   const runnerTemp = process.env.RUNNER_TEMP || os.tmpdir();
-  const tempDirPrefix = `${ACTION_REPOSITORY.replaceAll("/", "-")}-`;
+  const tempDirPrefix = `${releaseRepository.replaceAll("/", "-")}-`;
   const daemonDir = await fsp.mkdtemp(path.join(runnerTemp, tempDirPrefix));
   const socketPath = path.join(daemonDir, "daemon.sock");
   const binaryPath = path.join(daemonDir, BINARY_NAME);
@@ -390,10 +399,14 @@ const main = async () => {
   const actionRef =
     core.getInput("action-ref") || requiredEnv("GITHUB_ACTION_REF");
 
-  const assetRequest =
-    isCommitSha(actionRef)
-      ? await githubApiReleaseAssetRequest(actionRef, assetName, githubToken)
-      : directReleaseAssetRequest(actionRef, assetName);
+  const assetRequest = isCommitSha(actionRef)
+    ? await githubApiReleaseAssetRequest(
+        releaseRepository,
+        actionRef,
+        assetName,
+        githubToken,
+      )
+    : directReleaseAssetRequest(releaseRepository, actionRef, assetName);
 
   core.info(`Downloading '${assetName}' from '${assetRequest.url}'`);
   await downloadGzipFile(assetRequest.url, binaryPath, assetRequest.headers);

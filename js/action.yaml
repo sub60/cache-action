@@ -5,6 +5,8 @@ inputs:
     required: true
   github-token:
     required: false
+  release-repository:
+    required: false
   action-ref:
     required: false
   user:
