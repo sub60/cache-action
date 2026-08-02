@@ -17,7 +17,6 @@ const {
 
 const ACTION_REPOSITORY = "sub60/cache-action";
 const BINARY_NAME = "cache-action";
-const IS_PRIVATE = true; // TODO: remove this once the repository is public
 
 /**
  * @typedef {{ name: string, commit?: { sha?: string } }} GitHubTag
@@ -391,14 +390,8 @@ const main = async () => {
   const actionRef =
     core.getInput("action-ref") || requiredEnv("GITHUB_ACTION_REF");
 
-  if (IS_PRIVATE && !githubToken) {
-    throw new Error(
-      "github-token is required to download release assets from the private cache-action repository",
-    );
-  }
-
   const assetRequest =
-    IS_PRIVATE || isCommitSha(actionRef)
+    isCommitSha(actionRef)
       ? await githubApiReleaseAssetRequest(actionRef, assetName, githubToken)
       : directReleaseAssetRequest(actionRef, assetName);
 
