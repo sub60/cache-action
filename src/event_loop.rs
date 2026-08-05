@@ -7,7 +7,7 @@ use std::io;
 
 use async_compat::Compat;
 use futures::stream::{FusedStream, FuturesUnordered};
-use futures::{AsyncRead, AsyncWrite, StreamExt, future, select};
+use futures::{AsyncRead, AsyncWrite, StreamExt, TryFutureExt, future, select};
 use nix_types::{
     CompressionAlgorithm,
     NarInfo,
@@ -259,14 +259,15 @@ async fn handle_store_path<C: Cache, H: HttpClient, N: Nix>(
 
     let mut writer = HashAndCountWriter::new(Compat::new(writer));
 
-    let (nix_res, cache_res) = future::join(
-        nix.write_nar(store_path, &mut writer),
-        cache.upload_nar(&mut nar_upload_state, Compat::new(reader)),
+    // This stops polling either half as soon as the other one fails.
+    future::try_join(
+        nix.write_nar(store_path, &mut writer)
+            .map_err(HandlePathError::WriteNar),
+        cache
+            .upload_nar(&mut nar_upload_state, Compat::new(reader))
+            .map_err(HandlePathError::UploadNar),
     )
-    .await;
-
-    nix_res.map_err(HandlePathError::WriteNar)?;
-    cache_res.map_err(HandlePathError::UploadNar)?;
+    .await?;
 
     let nar_hash = Nix32Digest::new(&writer.sha256.finalize().into());
 
