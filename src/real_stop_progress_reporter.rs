@@ -81,14 +81,24 @@ impl<W: AsyncWrite + Unpin> context::StopProgressReporter
         )
         .expect("never fails");
 
-        writeln!(
+        write!(
             &mut msg,
-            "{} store path{} {} pushed, totalling {}",
+            "{} store path{} {} pushed",
             report.num_paths_pushed,
             if report.num_paths_pushed == 1 { "" } else { "s" },
             if report.num_paths_pushed == 1 { "was" } else { "were" },
-            HumanReadableByteSize(report.num_bytes_pushed),
         )
+        .expect("never fails");
+
+        if report.num_paths_pushed > 0 {
+            writeln!(
+                &mut msg,
+                ", totalling {}",
+                HumanReadableByteSize(report.num_bytes_pushed)
+            )
+        } else {
+            writeln!(&mut msg)
+        }
         .expect("never fails");
 
         let num_errors = report.path_closure_errors.len()
