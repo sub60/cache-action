@@ -40,23 +40,31 @@ const requiredEnv = (name) => {
 };
 
 /**
+ * @param {string} runnerOs
+ * @param {string} runnerArch
  * @returns {string}
  */
-const platformAssetTarget = () => {
-  const archByNodeArch = /** @type {Record<string, string>} */ ({
-    x64: "x86_64",
-    arm64: "aarch64",
+const platformAssetTarget = (runnerOs, runnerArch) => {
+  const platformByRunnerOs = /** @type {Record<string, string>} */ ({
+    Linux: "linux",
+    macOS: "darwin",
+  });
+  const archByRunnerArch = /** @type {Record<string, string>} */ ({
+    X64: "x86_64",
+    ARM64: "aarch64",
   });
 
-  const arch = archByNodeArch[os.arch()];
-
-  if (!arch || !["linux", "darwin"].includes(process.platform)) {
-    throw new Error(
-      `Unsupported runner platform '${process.platform}' and architecture '${os.arch()}'`,
-    );
+  const platform = platformByRunnerOs[runnerOs];
+  if (!platform) {
+    throw new Error(`Unsupported RUNNER_OS '${runnerOs}'`);
   }
 
-  return `${arch}-${process.platform}`;
+  const arch = archByRunnerArch[runnerArch];
+  if (!arch) {
+    throw new Error(`Unsupported RUNNER_ARCH '${runnerArch}'`);
+  }
+
+  return `${arch}-${platform}`;
 };
 
 /**
@@ -387,9 +395,11 @@ const main = async () => {
   const runnerTemp = process.env.RUNNER_TEMP || os.tmpdir();
 
   const target = await core.group("Detect platform", () => {
-    const target = platformAssetTarget();
+    const runnerOs = requiredEnv("RUNNER_OS");
+    const runnerArch = requiredEnv("RUNNER_ARCH");
+    const target = platformAssetTarget(runnerOs, runnerArch);
     core.info(
-      `Detected platform: ${target} (OS=${process.platform}, ARCH=${os.arch()})`,
+      `Detected platform: ${target} (OS=${runnerOs}, ARCH=${runnerArch})`,
     );
     return target;
   });
