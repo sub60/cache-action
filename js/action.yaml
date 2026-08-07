@@ -20,3 +20,4 @@ runs:
   using: "node24"
   main: "main.js"
   post: "post.js"
+  post-if: "always() && env.SUB60_SETUP_CACHE_STARTED == 'true'"

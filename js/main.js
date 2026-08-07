@@ -10,10 +10,11 @@ const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const zlib = require("node:zlib");
 const {
+  printDaemonLog,
   STATE_BINARY_PATH,
   STATE_DAEMON_LOG_PATH,
   STATE_SOCKET_PATH,
-} = require("./state");
+} = require("./common");
 
 const DEFAULT_RELEASE_REPOSITORY = "sub60/setup-cache";
 const BINARY_NAME = "cache-action";
@@ -333,9 +334,9 @@ const waitForDaemonReady = async (child) => {
   );
 
   /** @type {(error: Error) => void} */
-  let onError = () => {};
+  let onError = () => { };
   /** @type {(code: number | null, signal: NodeJS.Signals | null) => void} */
-  let onExit = () => {};
+  let onExit = () => { };
 
   const exitedEarly = new Promise((_, reject) => {
     onError = reject;
@@ -398,23 +399,18 @@ const main = async () => {
 
   const assetRequest = isCommitSha(actionRef)
     ? await githubApiReleaseAssetRequest(
-        releaseRepository,
-        actionRef,
-        assetName,
-        githubToken,
-      )
+      releaseRepository,
+      actionRef,
+      assetName,
+      githubToken,
+    )
     : directReleaseAssetRequest(releaseRepository, actionRef, assetName);
 
   core.info(`Downloading '${assetName}' from '${assetRequest.url}'`);
   await downloadGzipFile(assetRequest.url, binaryPath, assetRequest.headers);
 
-  core.saveState(STATE_SOCKET_PATH, socketPath);
-  core.saveState(STATE_BINARY_PATH, binaryPath);
-  core.saveState(STATE_DAEMON_LOG_PATH, daemonLogPath);
-
   await writeHookScript(hookPath, binaryPath, socketPath);
   await writeNixConfig(configPath, hookPath);
-  core.exportVariable("NIX_USER_CONF_FILES", mergedUserConfFiles(configPath));
 
   const daemonArgs = [
     "run",
@@ -434,18 +430,29 @@ const main = async () => {
     daemonArgs.push("--upstream-caches", upstreamCaches.join(","));
   }
 
-  const daemonLogFd = fs.openSync(daemonLogPath, "a");
   let child;
   try {
-    child = spawn(binaryPath, daemonArgs, {
-      detached: true,
-      stdio: ["ignore", daemonLogFd, daemonLogFd, "pipe"],
-    });
-  } finally {
-    fs.closeSync(daemonLogFd);
+    const daemonLogFd = fs.openSync(daemonLogPath, "a");
+    try {
+      child = spawn(binaryPath, daemonArgs, {
+        detached: true,
+        stdio: ["ignore", daemonLogFd, daemonLogFd, "pipe"],
+      });
+    } finally {
+      fs.closeSync(daemonLogFd);
+    }
+
+    await waitForDaemonReady(child);
+  } catch (error) {
+    await printDaemonLog(daemonLogPath);
+    throw error;
   }
 
-  await waitForDaemonReady(child);
+  core.saveState(STATE_SOCKET_PATH, socketPath);
+  core.saveState(STATE_BINARY_PATH, binaryPath);
+  core.saveState(STATE_DAEMON_LOG_PATH, daemonLogPath);
+  core.exportVariable("NIX_USER_CONF_FILES", mergedUserConfFiles(configPath));
+  core.exportVariable("SUB60_SETUP_CACHE_STARTED", "true");
 
   core.info(
     `Started daemon with process ID ${child.pid}, listening on ${socketPath}`,
