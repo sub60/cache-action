@@ -51,32 +51,52 @@ pub(crate) struct Sub60CacheRunArgs {
     auth_token: AuthToken,
 }
 
-#[derive(Debug)]
+#[derive(Debug, derive_more::Display, cauchy::Error)]
 pub(crate) enum Sub60CacheConnectError {
-    BuildHttpClient(reqwest::Error),
+    #[display("couldn't build HTTP client")]
+    BuildHttpClient(#[source] reqwest::Error),
 }
 
-#[derive(Debug)]
+#[derive(Debug, derive_more::Display, cauchy::Error)]
 pub(crate) enum CacheRequestError {
-    ParseEtag(QuotedFromStrError<<Etag as FromStr>::Err>),
+    #[display("couldn't parse Etag")]
+    ParseEtag(#[source] QuotedFromStrError<<Etag as FromStr>::Err>),
+    #[display("invalid {header} header from {method} {url}")]
     InvalidResponseHeader {
         method: Method,
         url: url::Url,
         header: header::HeaderName,
+        #[source]
         source: header::ToStrError,
     },
+    #[display("missing {header} header from {method} {url}")]
     MissingResponseHeader {
         method: Method,
         url: url::Url,
         header: header::HeaderName,
     },
+    #[display("couldn't parse NAR multipart response body")]
     ParseNarMultipartsResponseBody(
-        <NarMultipartsResponseBody as core::str::FromStr>::Err,
+        #[source] <NarMultipartsResponseBody as core::str::FromStr>::Err,
     ),
-    ParsePartsResponseBody(<PartsResponseBody as core::str::FromStr>::Err),
-    ReadNar(io::Error),
-    Request(reqwest::Error),
+    #[display("couldn't parse multipart parts response body")]
+    ParsePartsResponseBody(
+        #[source] <PartsResponseBody as core::str::FromStr>::Err,
+    ),
+    #[display("couldn't read NAR bytes")]
+    ReadNar(#[source] io::Error),
+    #[display("HTTP {method} request failed")]
+    HttpRequest {
+        method: Method,
+        #[source]
+        source: reqwest::Error,
+    },
+    #[display("NAR upload has too many multipart parts")]
     TooManyNarParts,
+    #[display(
+        "unexpected response from {method} {url}: {status}{body}",
+        body = ResponseBodySuffix(body),
+    )]
     UnexpectedResponse {
         method: Method,
         status: StatusCode,
@@ -93,13 +113,27 @@ pub(crate) struct NarUploadState {
     urls_expiration_ts: Duration,
 }
 
-#[derive(Debug)]
+#[derive(Debug, derive_more::Display, cauchy::Error)]
 pub(crate) enum QuotedFromStrError<T> {
+    #[display("value must be wrapped in double quotes")]
     MissingQuotes,
-    Inner(T),
+    #[display("invalid quoted value")]
+    Inner(#[source] T),
 }
 
 struct Quoted<T>(T);
+
+struct ResponseBodySuffix<'a>(&'a str);
+
+impl fmt::Display for ResponseBodySuffix<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.0.is_empty() {
+            Ok(())
+        } else {
+            write!(formatter, ": {}", self.0)
+        }
+    }
+}
 
 impl Sub60Cache {
     /// TODO: docs.
@@ -134,7 +168,10 @@ impl Sub60Cache {
             .body(CompleteRequestBody { etags, store_basename }.to_string())
             .send()
             .await
-            .map_err(CacheRequestError::Request)?;
+            .map_err(|source| CacheRequestError::HttpRequest {
+                method: Method::POST,
+                source,
+            })?;
 
         if response.status().is_success() {
             Ok(())
@@ -206,7 +243,10 @@ impl Sub60Cache {
             .body(PartsRequestBody { part_numbers, store_basename }.to_string())
             .send()
             .await
-            .map_err(CacheRequestError::Request)?;
+            .map_err(|source| CacheRequestError::HttpRequest {
+                method: Method::POST,
+                source,
+            })?;
 
         if !response.status().is_success() {
             return Err(CacheRequestError::unexpected_response(
@@ -220,7 +260,10 @@ impl Sub60Cache {
         response
             .text()
             .await
-            .map_err(CacheRequestError::Request)?
+            .map_err(|source| CacheRequestError::HttpRequest {
+                method: Method::POST,
+                source,
+            })?
             .parse::<PartsResponseBody>()
             .map_err(CacheRequestError::ParsePartsResponseBody)
     }
@@ -236,7 +279,10 @@ impl Sub60Cache {
             .body(part_bytes)
             .send()
             .await
-            .map_err(CacheRequestError::Request)?;
+            .map_err(|source| CacheRequestError::HttpRequest {
+                method: Method::PUT,
+                source,
+            })?;
 
         if !response.status().is_success() {
             return Err(CacheRequestError::unexpected_response(
@@ -295,12 +341,10 @@ impl context::Cache for Sub60Cache {
     ) -> Result<bool, Self::Error> {
         let url = self.narinfo_url(narinfo_filename);
 
-        let response = self
-            .client
-            .head(url.clone())
-            .send()
-            .await
-            .map_err(CacheRequestError::Request)?;
+        let response =
+            self.client.head(url.clone()).send().await.map_err(|source| {
+                CacheRequestError::HttpRequest { method: Method::HEAD, source }
+            })?;
 
         match response.status() {
             StatusCode::OK => Ok(true),
@@ -326,7 +370,10 @@ impl context::Cache for Sub60Cache {
             .body(store_path.basename().to_string())
             .send()
             .await
-            .map_err(CacheRequestError::Request)?;
+            .map_err(|source| CacheRequestError::HttpRequest {
+                method: Method::POST,
+                source,
+            })?;
 
         if !response.status().is_success() {
             return Err(CacheRequestError::unexpected_response(
@@ -340,7 +387,10 @@ impl context::Cache for Sub60Cache {
         let body = response
             .text()
             .await
-            .map_err(CacheRequestError::Request)?
+            .map_err(|source| CacheRequestError::HttpRequest {
+                method: Method::POST,
+                source,
+            })?
             .parse::<NarMultipartsResponseBody>()
             .map_err(CacheRequestError::ParseNarMultipartsResponseBody)?;
 
@@ -448,13 +498,13 @@ impl context::Cache for Sub60Cache {
         let url = self
             .narinfo_upload_url(&narinfo_filename, &nar_upload_state.upload_id);
 
-        let response = self
-            .client
-            .put(url.clone())
-            .body(narinfo)
-            .send()
-            .await
-            .map_err(CacheRequestError::Request)?;
+        let response =
+            self.client.put(url.clone()).body(narinfo).send().await.map_err(
+                |source| CacheRequestError::HttpRequest {
+                    method: Method::PUT,
+                    source,
+                },
+            )?;
 
         if response.status().is_success() {
             Ok(narinfo_size)
@@ -479,89 +529,5 @@ impl<T: FromStr> FromStr for Quoted<T> {
             .parse()
             .map(Self)
             .map_err(QuotedFromStrError::Inner)
-    }
-}
-
-impl fmt::Display for Sub60CacheConnectError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::BuildHttpClient(err) => {
-                write!(f, "couldn't build HTTP client: {err}")
-            },
-        }
-    }
-}
-
-impl fmt::Display for CacheRequestError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ParseEtag(err) => write!(f, "couldn't parse Etag: {err}"),
-            Self::InvalidResponseHeader { method, url, header, source } => {
-                write!(
-                    f,
-                    "invalid {header} header from {method} {url}: {source}"
-                )
-            },
-            Self::MissingResponseHeader { method, url, header } => {
-                write!(f, "missing {header} header from {method} {url}")
-            },
-            Self::ParseNarMultipartsResponseBody(err) => {
-                write!(f, "couldn't parse NAR multipart response body: {err}")
-            },
-            Self::ParsePartsResponseBody(err) => {
-                write!(f, "couldn't parse multipart parts response body: {err}")
-            },
-            Self::ReadNar(err) => write!(f, "couldn't read NAR bytes: {err}"),
-            Self::Request(err) => write!(f, "HTTP request failed: {err}"),
-            Self::TooManyNarParts => {
-                write!(f, "NAR upload has too many multipart parts")
-            },
-            Self::UnexpectedResponse { method, status, url, body } => {
-                write!(f, "unexpected response from {method} {url}: {status}")?;
-                if !body.is_empty() {
-                    write!(f, ": {body}")?;
-                }
-                Ok(())
-            },
-        }
-    }
-}
-
-impl core::error::Error for Sub60CacheConnectError {}
-
-impl core::error::Error for CacheRequestError {
-    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
-        match self {
-            Self::ParseEtag(err) => Some(err),
-            Self::InvalidResponseHeader { source, .. } => Some(source),
-            Self::MissingResponseHeader { .. } => None,
-            Self::ParseNarMultipartsResponseBody(err) => Some(err),
-            Self::ParsePartsResponseBody(err) => Some(err),
-            Self::ReadNar(err) => Some(err),
-            Self::Request(err) => Some(err),
-            Self::TooManyNarParts | Self::UnexpectedResponse { .. } => None,
-        }
-    }
-}
-
-impl<T: fmt::Display> fmt::Display for QuotedFromStrError<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::MissingQuotes => {
-                write!(f, "value must be wrapped in double quotes")
-            },
-            Self::Inner(err) => err.fmt(f),
-        }
-    }
-}
-
-impl<T: core::error::Error + 'static> core::error::Error
-    for QuotedFromStrError<T>
-{
-    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
-        match self {
-            Self::MissingQuotes => None,
-            Self::Inner(err) => Some(err),
-        }
     }
 }

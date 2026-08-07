@@ -1,5 +1,3 @@
-use core::fmt;
-
 use futures::AsyncRead;
 use nix_types::{NarInfo, NarInfoFileName, StorePath};
 
@@ -26,10 +24,12 @@ pub(crate) enum AnyCacheNarUploadState {
     Sub60(<Sub60Cache as Cache>::NarUploadState),
 }
 
-#[derive(Debug)]
+#[derive(Debug, derive_more::Display, cauchy::Error)]
 pub(crate) enum AnyCacheError {
-    Noop(<NoopCache as Cache>::Error),
-    Sub60(<Sub60Cache as Cache>::Error),
+    #[display("no-op cache error")]
+    Noop(#[source] <NoopCache as Cache>::Error),
+    #[display("Sub60 cache error")]
+    Sub60(#[source] <Sub60Cache as Cache>::Error),
 }
 
 impl AnyCache {
@@ -156,14 +156,3 @@ impl From<<Sub60Cache as Cache>::Error> for AnyCacheError {
         Self::Sub60(error)
     }
 }
-
-impl fmt::Display for AnyCacheError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Noop(error) => error.fmt(f),
-            Self::Sub60(error) => error.fmt(f),
-        }
-    }
-}
-
-impl core::error::Error for AnyCacheError {}

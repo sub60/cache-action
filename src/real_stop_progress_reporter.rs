@@ -1,3 +1,4 @@
+use core::error::Error as _;
 use core::fmt::{self, Write};
 use core::num::NonZeroU64;
 
@@ -124,8 +125,16 @@ impl<W: AsyncWrite + Unpin> context::StopProgressReporter
                 );
 
             for (store_path, error) in errors {
-                writeln!(&mut msg, "{store_path}: {error}",)
-                    .expect("never fails");
+                write!(&mut msg, "{store_path}: {error}").expect("never fails");
+
+                let mut source = error.source();
+                while let Some(err) = source {
+                    write!(&mut msg, "\n  caused by: {err}")
+                        .expect("never fails");
+                    source = err.source();
+                }
+
+                msg.write_char('\n').expect("never fails");
             }
         }
 

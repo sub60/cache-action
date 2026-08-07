@@ -214,7 +214,9 @@ version = "0.0.17"
 dependencies = [
  "async-compat",
  "bytes",
+ "cauchy",
  "clap",
+ "derive_more",
  "either",
  "flume",
  "futures",
@@ -246,7 +248,7 @@ dependencies = [
 [[package]]
 name = "cauchy"
 version = "0.1.0"
-source = "git+https://github.com/nomad/cauchy.git#a5acc6991fa98d75280e83cec8a440fa2493d03d"
+source = "git+https://github.com/nomad/cauchy.git#13dd4f1bf2958e2b9144557ce9828dca2678f04f"
 dependencies = [
  "proc-macro2",
  "quote",

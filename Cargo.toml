@@ -9,7 +9,11 @@ sub60-cache = []
 [dependencies]
 async-compat = "0.2"
 bytes = "1"
+cauchy = { git = "https://github.com/nomad/cauchy.git" }
 clap = { version = "4.5.38", features = ["derive"] }
+derive_more = { version = "2", default-features = false, features = [
+  "display",
+] }
 either = "1"
 flume = { version = "0.12" }
 futures = { version = "0.3" }

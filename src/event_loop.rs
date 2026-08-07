@@ -1,4 +1,3 @@
-use core::fmt;
 use core::num::NonZeroU64;
 use core::pin::{Pin, pin};
 use core::task::{Context as TaskContext, Poll};
@@ -67,13 +66,21 @@ pub(crate) struct ActionReport<Ctx: Context> {
 
 /// The type of error that can occur when [handling](handle_store_path) a store
 /// path.
+#[derive(cauchy::Debug, derive_more::Display, cauchy::Error)]
 pub(crate) enum HandlePathError<C: Cache, N: Nix> {
-    CheckNarInfoExistence(C::Error),
-    CreateNarUploadId(C::Error),
-    GetPathInfos(N::PathInfosError),
-    UploadNar(C::Error),
-    UploadNarInfo(C::Error),
-    WriteNar(N::WriteNarError),
+    #[display("couldn't check NARInfo existence on remote cache")]
+    CheckNarInfoExistence(#[source] C::Error),
+    #[display("couldn't create NAR upload ID")]
+    CreateNarUploadId(#[source] C::Error),
+    #[display("couldn't get store path infos")]
+    GetPathInfos(#[source] N::PathInfosError),
+    #[display("couldn't upload NAR to cache")]
+    UploadNar(#[source] C::Error),
+    #[display("couldn't upload NARInfo to cache")]
+    UploadNarInfo(#[source] C::Error),
+    #[display("couldn't get NAR from store")]
+    WriteNar(#[source] N::WriteNarError),
+    #[display("got empty NAR from store")]
     WriteNarWroteZeroBytes,
 }
 
@@ -427,37 +434,6 @@ impl<Ctx: Context> Default for ActionReport<Ctx> {
             num_paths_skipped: 0,
             path_closure_errors: Default::default(),
             path_handling_errors: Default::default(),
-        }
-    }
-}
-
-impl<C: Cache, N: Nix> fmt::Display for HandlePathError<C, N> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::CheckNarInfoExistence(err) => {
-                write!(
-                    f,
-                    "couldn't check NARInfo existence on remote cache: {err}"
-                )
-            },
-            Self::CreateNarUploadId(err) => {
-                write!(f, "couldn't create NAR upload ID: {err}")
-            },
-            Self::GetPathInfos(err) => {
-                write!(f, "couldn't get store path infos: {err}")
-            },
-            Self::UploadNar(err) => {
-                write!(f, "couldn't upload NAR to cache: {err}")
-            },
-            Self::UploadNarInfo(err) => {
-                write!(f, "couldn't upload NARInfo to cache: {err}")
-            },
-            Self::WriteNar(err) => {
-                write!(f, "couldn't get NAR from store: {err}")
-            },
-            Self::WriteNarWroteZeroBytes => {
-                write!(f, "got empty NAR from store")
-            },
         }
     }
 }
