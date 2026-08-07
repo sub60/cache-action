@@ -2,7 +2,7 @@ use core::fmt;
 use core::num::NonZeroU64;
 use core::pin::{Pin, pin};
 use core::task::{Context as TaskContext, Poll};
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::io;
 
 use async_compat::Compat;
@@ -31,6 +31,10 @@ use crate::context::{
 use crate::protocol::{self, StoreDir};
 use crate::run::RunArgs;
 
+/// Maximum number of store paths handled concurrently.
+const MAX_CONCURRENT_STORE_PATHS: usize = 32;
+
+/// Capacity of the in-memory buffer used to stream a NAR to the cache.
 const NAR_STREAM_BUFFER_SIZE: usize = 64 * 1024;
 
 pub(crate) trait Io: Send + 'static {
@@ -105,11 +109,17 @@ pub(crate) async fn run<Ctx: Context>(
 
     let mut store_closures = FuturesUnordered::new();
     let mut handle_store_paths = FuturesUnordered::new();
+    let mut pending_handle_store_paths = VecDeque::new();
     let mut seen_store_hashes = HashSet::new();
 
     let mut report = ActionReport::<Ctx>::default();
+    let mut stop_progress_writer = None;
 
-    let stop_progress_writer = loop {
+    loop {
+        if stop_progress_writer.is_some() && store_closures.is_empty() {
+            break;
+        }
+
         select! {
             io = io_stream.select_next_some() => {
                 ctx.spawner().spawn(handle_io(io, message_tx.clone())).detach();
@@ -125,7 +135,9 @@ pub(crate) async fn run<Ctx: Context>(
                         };
                         store_closures.push(ctx.spawner().spawn(fut));
                     },
-                    Ok(Event::Stop(writer)) => break writer,
+                    Ok(Event::Stop(writer)) => {
+                        stop_progress_writer = Some(writer);
+                    },
                     Err(rx_err) => ctx.handle_rx_error(rx_err),
                 }
             },
@@ -137,6 +149,7 @@ pub(crate) async fn run<Ctx: Context>(
                             if !seen_store_hashes.insert(*path.hash()) {
                                 continue;
                             }
+
                             let mut upstream_caches = args.upstream_caches.clone();
                             let cache = cache.clone();
                             let http_client = ctx.http_client().clone();
@@ -148,10 +161,16 @@ pub(crate) async fn run<Ctx: Context>(
                                     &cache,
                                     &http_client,
                                     &mut nix,
-                                ).await;
+                                )
+                                .await;
                                 (result, path)
                             };
-                            handle_store_paths.push(ctx.spawner().spawn(fut));
+
+                            if handle_store_paths.len() < MAX_CONCURRENT_STORE_PATHS {
+                                handle_store_paths.push(ctx.spawner().spawn(fut));
+                            } else {
+                                pending_handle_store_paths.push_back(fut);
+                            }
                         }
                     },
                     Err(tuple) => report.path_closure_errors.push(tuple),
@@ -166,15 +185,24 @@ pub(crate) async fn run<Ctx: Context>(
                     Ok(None) => report.num_paths_skipped += 1,
                     Err(err) => report.path_handling_errors.push((path, err)),
                 }
+
+                if let Some(fut) = pending_handle_store_paths.pop_front() {
+                    handle_store_paths.push(ctx.spawner().spawn(fut));
+                }
             },
         };
-    };
+    }
 
-    let writer = pin!(stop_progress_writer);
+    let writer = pin!(stop_progress_writer.expect("received a stop request"));
 
     let mut reporter = ctx.new_stop_progress_reporter(writer);
 
-    reporter.report_paths_left_to_handle(handle_store_paths.len() as u32).await;
+    reporter
+        .report_paths_left_to_handle(
+            (handle_store_paths.len() + pending_handle_store_paths.len())
+                as u32,
+        )
+        .await;
 
     while let Some((result, path)) = handle_store_paths.next().await {
         match result {
@@ -191,6 +219,10 @@ pub(crate) async fn run<Ctx: Context>(
                 reporter.report_path_handling_error(&path, &err).await;
                 report.path_handling_errors.push((path, err))
             },
+        }
+
+        if let Some(fut) = pending_handle_store_paths.pop_front() {
+            handle_store_paths.push(ctx.spawner().spawn(fut));
         }
     }
 
