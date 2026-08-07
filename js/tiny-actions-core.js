@@ -86,6 +86,22 @@ const info = (message) => {
 };
 
 /**
+ * @template T
+ * @param {string} name
+ * @param {() => T | Promise<T>} fn
+ * @returns {Promise<T>}
+ */
+const group = async (name, fn) => {
+  process.stdout.write(`::group::${name}\n`);
+
+  try {
+    return await fn();
+  } finally {
+    process.stdout.write("::endgroup::\n");
+  }
+};
+
+/**
  * @param {string} message
  */
 const setFailed = (message) => {
@@ -97,6 +113,7 @@ module.exports = {
   exportVariable,
   getInput,
   getState,
+  group,
   info,
   saveState,
   setFailed,

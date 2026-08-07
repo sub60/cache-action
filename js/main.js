@@ -334,9 +334,9 @@ const waitForDaemonReady = async (child) => {
   );
 
   /** @type {(error: Error) => void} */
-  let onError = () => { };
+  let onError = () => {};
   /** @type {(code: number | null, signal: NodeJS.Signals | null) => void} */
-  let onExit = () => { };
+  let onExit = () => {};
 
   const exitedEarly = new Promise((_, reject) => {
     onError = reject;
@@ -385,80 +385,103 @@ const main = async () => {
     process.env.GITHUB_ACTION_REPOSITORY?.trim() ||
     DEFAULT_RELEASE_REPOSITORY;
   const runnerTemp = process.env.RUNNER_TEMP || os.tmpdir();
-  const tempDirPrefix = `${releaseRepository.replaceAll("/", "-")}-`;
-  const daemonDir = await fsp.mkdtemp(path.join(runnerTemp, tempDirPrefix));
-  const socketPath = path.join(daemonDir, "daemon.sock");
-  const binaryPath = path.join(daemonDir, BINARY_NAME);
-  const hookPath = path.join(daemonDir, "post-build-hook.sh");
-  const configPath = path.join(daemonDir, "nix.conf");
-  const daemonLogPath = path.join(daemonDir, "daemon.log");
-  const target = platformAssetTarget();
-  const assetName = `${BINARY_NAME}-${target}.gz`;
-  const actionRef =
-    core.getInput("action-ref") || requiredEnv("GITHUB_ACTION_REF");
 
-  const assetRequest = isCommitSha(actionRef)
-    ? await githubApiReleaseAssetRequest(
-      releaseRepository,
-      actionRef,
-      assetName,
-      githubToken,
-    )
-    : directReleaseAssetRequest(releaseRepository, actionRef, assetName);
+  const target = await core.group("Detect platform", () => {
+    const target = platformAssetTarget();
+    core.info(
+      `Detected platform: ${target} (OS=${process.platform}, ARCH=${os.arch()})`,
+    );
+    return target;
+  });
 
-  core.info(`Downloading '${assetName}' from '${assetRequest.url}'`);
-  await downloadGzipFile(assetRequest.url, binaryPath, assetRequest.headers);
+  const paths = await core.group("Download binary", async () => {
+    const tempDirPrefix = `${releaseRepository.replaceAll("/", "-")}-`;
+    const daemonDir = await fsp.mkdtemp(path.join(runnerTemp, tempDirPrefix));
+    const socketPath = path.join(daemonDir, "daemon.sock");
+    const binaryPath = path.join(daemonDir, BINARY_NAME);
+    const postBuildHookPath = path.join(daemonDir, "post-build-hook.sh");
+    const configPath = path.join(daemonDir, "nix.conf");
+    const daemonLogPath = path.join(daemonDir, "daemon.log");
+    const assetName = `${BINARY_NAME}-${target}.gz`;
+    const actionRef =
+      core.getInput("action-ref") || requiredEnv("GITHUB_ACTION_REF");
 
-  await writeHookScript(hookPath, binaryPath, socketPath);
-  await writeNixConfig(configPath, hookPath);
+    const assetRequest = isCommitSha(actionRef)
+      ? await githubApiReleaseAssetRequest(
+          releaseRepository,
+          actionRef,
+          assetName,
+          githubToken,
+        )
+      : directReleaseAssetRequest(releaseRepository, actionRef, assetName);
 
-  const daemonArgs = [
-    "run",
-    "--socket",
-    socketPath,
-    "--ready-fd",
-    "3",
-    "--auth-token",
-    authToken,
-    "--user",
-    user,
-    "--cache",
-    cache,
-  ];
+    core.info(`Downloading '${assetName}' from '${assetRequest.url}'`);
+    await downloadGzipFile(assetRequest.url, binaryPath, assetRequest.headers);
 
-  if (upstreamCaches.length > 0) {
-    daemonArgs.push("--upstream-caches", upstreamCaches.join(","));
-  }
+    return {
+      binary: binaryPath,
+      config: configPath,
+      daemonLog: daemonLogPath,
+      postBuildHook: postBuildHookPath,
+      socket: socketPath,
+    };
+  });
 
-  let child;
-  try {
-    const daemonLogFd = fs.openSync(daemonLogPath, "a");
-    try {
-      child = spawn(binaryPath, daemonArgs, {
-        detached: true,
-        stdio: ["ignore", daemonLogFd, daemonLogFd, "pipe"],
-      });
-    } finally {
-      fs.closeSync(daemonLogFd);
+  await core.group("Start daemon", async () => {
+    await writeHookScript(paths.postBuildHook, paths.binary, paths.socket);
+    await writeNixConfig(paths.config, paths.postBuildHook);
+
+    const daemonArgs = [
+      "run",
+      "--socket",
+      paths.socket,
+      "--ready-fd",
+      "3",
+      "--auth-token",
+      authToken,
+      "--user",
+      user,
+      "--cache",
+      cache,
+    ];
+
+    if (upstreamCaches.length > 0) {
+      daemonArgs.push("--upstream-caches", upstreamCaches.join(","));
     }
 
-    await waitForDaemonReady(child);
-  } catch (error) {
-    await printDaemonLog(daemonLogPath);
-    throw error;
-  }
+    let child;
+    try {
+      const daemonLogFd = fs.openSync(paths.daemonLog, "a");
+      try {
+        child = spawn(paths.binary, daemonArgs, {
+          detached: true,
+          stdio: ["ignore", daemonLogFd, daemonLogFd, "pipe"],
+        });
+      } finally {
+        fs.closeSync(daemonLogFd);
+      }
 
-  core.saveState(STATE_SOCKET_PATH, socketPath);
-  core.saveState(STATE_BINARY_PATH, binaryPath);
-  core.saveState(STATE_DAEMON_LOG_PATH, daemonLogPath);
-  core.exportVariable("NIX_USER_CONF_FILES", mergedUserConfFiles(configPath));
-  core.exportVariable("SUB60_SETUP_CACHE_STARTED", "true");
+      await waitForDaemonReady(child);
+    } catch (error) {
+      await printDaemonLog(paths.daemonLog);
+      throw error;
+    }
 
-  core.info(
-    `Started daemon with process ID ${child.pid}, listening on ${socketPath}`,
-  );
+    core.saveState(STATE_SOCKET_PATH, paths.socket);
+    core.saveState(STATE_BINARY_PATH, paths.binary);
+    core.saveState(STATE_DAEMON_LOG_PATH, paths.daemonLog);
+    core.exportVariable(
+      "NIX_USER_CONF_FILES",
+      mergedUserConfFiles(paths.config),
+    );
+    core.exportVariable("SUB60_SETUP_CACHE_STARTED", "true");
 
-  child.unref();
+    core.info(
+      `Started daemon with process ID ${child.pid}, listening on ${paths.socket}`,
+    );
+
+    child.unref();
+  });
 };
 
 main().catch((error) => {
